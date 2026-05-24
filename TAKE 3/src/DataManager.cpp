@@ -226,5 +226,86 @@ namespace Statix {
             "Q19","Q20","Q21"
         };
     }
+    bool DataManager::AppendTable(const Table& table, std::string& outError)
+    {
+        if (table.size() < 2)
+        {
+            outError = "AppendTable: table is empty or has no data rows.";
+            return false;
+        }
+
+        // Snapshot count so we can roll back on failure.
+        const size_t beforeCount = respondents_.size();
+        size_t rowIdx = respondents_.size(); // continue numbering from existing rows
+
+        for (size_t i = 1; i < table.size(); ++i)
+        {
+            const auto& rawRow = table[i];
+            ++rowIdx;
+
+            // Build a case-insensitive value map — same as LoadTable.
+            std::unordered_map<std::string, std::string> rowMap;
+            for (const auto& [colName, val] : rawRow) {
+                std::string norm = colName;
+                std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
+                rowMap[norm] = val;
+            }
+
+            auto trim = [](std::string s) -> std::string {
+                size_t start = s.find_first_not_of(" \t\n\r");
+                size_t end = s.find_last_not_of(" \t\n\r");
+                if (start == std::string::npos) return "";
+                return s.substr(start, end - start + 1);
+                };
+
+            auto getField = [&](const std::string& col) -> std::string {
+                std::string norm = col;
+                std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
+                auto it = rowMap.find(norm);
+                return (it != rowMap.end()) ? trim(it->second) : "";
+                };
+
+            SurveyRespondent rec;
+            rec.timestamp = "R" + std::to_string(rowIdx);
+            rec.gender = Normalise(getField("Gender"));
+            rec.education = Normalise(getField("Education"));
+            rec.hours = Normalise(getField("Hours"));
+            rec.platform = Normalise(getField("Platform"));
+            rec.ageGroup = Normalise(getField("Age"));
+            rec.contentPref = Normalise(getField("Content"));
+
+            static const std::array<const char*, 15> kLikertCols = {
+                "Q7",  "Q8",  "Q9",  "Q10",
+                "Q11", "Q12", "Q13", "Q14",
+                "Q15", "Q16", "Q17r",
+                "Q18", "Q19", "Q20", "Q21"
+            };
+
+            std::vector<std::string> likertTokens;
+            likertTokens.reserve(15);
+            for (const char* col : kLikertCols)
+                likertTokens.emplace_back(getField(col));
+
+            std::array<int, 15> likert{};
+            if (!ParseLikert(likertTokens, 0, likert)) {
+                // Roll back and report which row failed.
+                respondents_.resize(beforeCount);
+                outError = "AppendTable: row " + std::to_string(i)
+                    + " has invalid Likert values — append cancelled.";
+                return false;
+            }
+            rec.responses = likert;
+
+            auto it1 = rawRow.find("Qualitative1");
+            auto it2 = rawRow.find("Qualitative2");
+            if (it1 != rawRow.end()) rec.qualitative1 = it1->second;
+            if (it2 != rawRow.end()) rec.qualitative2 = it2->second;
+
+            rec.ComputeAnalytics();
+            respondents_.push_back(std::move(rec));
+        }
+
+        return true;
+    }
 
 } // namespace Statix

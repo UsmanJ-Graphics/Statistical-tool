@@ -35,6 +35,7 @@ namespace Statix {
 
         // Legacy
         bool draw_control_panel(...);   // your existing declaration
+        
 
     } // namespace UI
 } // namespace Statix

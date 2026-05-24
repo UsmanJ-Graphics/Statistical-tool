@@ -164,11 +164,11 @@ static int DrawBarChartImGui(ImDrawList* drawList,
     if (plotW <= 0.f || plotH <= 0.f) return -1;
 
     // ── Palette ──────────────────────────────────────────────────
-    const ImU32 colAxis = IM_COL32(130, 150, 170, 200);
-    const ImU32 colTick = IM_COL32(200, 210, 220, 200);
-    const ImU32 colGrid = IM_COL32(255, 255, 255, 18);
-    const ImU32 colVal = IM_COL32(220, 230, 240, 255);
-    const ImU32 colTitle = IM_COL32(220, 230, 240, 255);
+    const ImU32 colAxis = IM_COL32(160, 100, 220, 200);
+    const ImU32 colTick = IM_COL32(200, 170, 255, 200);
+    const ImU32 colGrid = IM_COL32(160, 100, 255, 22);
+    const ImU32 colVal = IM_COL32(230, 210, 255, 255);
+    const ImU32 colTitle = IM_COL32(230, 210, 255, 255);
 
     auto lerpColor = [](const float a[4], const float b[4], float t) -> ImU32 {
         return IM_COL32(
@@ -266,8 +266,8 @@ static int DrawBarChartImGui(ImDrawList* drawList,
 
         // X-axis label
         {
-            char buf[12];
-            std::snprintf(buf, sizeof(buf), "S%d", i + 1);
+            char buf[20];
+            std::snprintf(buf, sizeof(buf), " R-%d", i + 1);
             ImVec2 tsz = ImGui::CalcTextSize(buf);
             drawList->AddText(
                 ImVec2(x0 + (x1 - x0) * 0.5f - tsz.x * 0.5f, plotY + plotH + 4.f),
@@ -304,7 +304,16 @@ int main()
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/arial.ttf", 14.0f);
     ImGui::StyleColorsDark();
+    // NOTE: No widget calls (TextUnformatted, TextDisabled, etc.) here —
+    // they require an active frame and will crash with g.CurrentWindow == nullptr.
+    // ----------------------------------------------------------------
+    //  STATIX Vivid Theme — warm violet → cyan gradient palette
+    //  Background: deep indigo-plum  |  Accent: electric violet + cyan
+    // ----------------------------------------------------------------
+
+
     ImGui_ImplGlfw_InitForOpenGL(window.get_handle(), true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
@@ -325,8 +334,8 @@ int main()
     bool  dataLoaded = false;
     std::string lastLoadedInfo;
 
-    float colorBase[4] = { 0.192f, 0.592f, 0.584f, 1.0f };
-    float colorHighlight[4] = { 0.25f,  0.88f,  0.82f,  1.0f };
+    float colorBase[4] = { 0.42f, 0.14f, 0.82f, 1.0f };  // electric violet
+    float colorHighlight[4] = { 0.10f, 0.88f, 0.88f, 1.0f };  // vivid cyan
 
     std::vector<std::string> metricNames = Statix::DataManager::GetMetricNames();
 
@@ -584,7 +593,7 @@ int main()
                 if (!writeOk) {
                     ImGui::SetClipboardText("Failed to write temporary file for pasted data.");
                     openPopup_ParseError = true;
-                    ImGui::OpenPopup("Parse Error");
+                    // OpenPopup deferred to root scope via flag — do NOT call here
                 }
                 else {
                     Statix::Table rawTable;
@@ -593,7 +602,7 @@ int main()
                     {
                         ImGui::SetClipboardText(parseError.c_str());
                         openPopup_ParseError = true;
-                        ImGui::OpenPopup("Parse Error");
+                        // OpenPopup deferred to root scope via flag — do NOT call here
                     }
                     else
                     {
@@ -602,7 +611,7 @@ int main()
                         {
                             ImGui::SetClipboardText(loadError.c_str());
                             openPopup_DataValidationError = true;
-                            ImGui::OpenPopup("Data Validation Error");
+                            // OpenPopup deferred to root scope via flag — do NOT call here
                         }
                         else
                         {
@@ -627,7 +636,7 @@ int main()
                             lastLoadedInfo = "Loaded " + std::to_string(dataManager.RowCount())
                                 + " rows from pasted text.";
                             openPopup_DataLoaded = true;
-                            ImGui::OpenPopup("Data Loaded");
+                            // OpenPopup deferred to root scope via flag — do NOT call here
                         }
                     }
                     std::filesystem::remove(tmpPath);   // B-12 FIX: always clean up
@@ -659,14 +668,14 @@ int main()
             if (!dataLoaded)
             {
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
                     "No dataset loaded. Use File > Load Dataset to begin.");
             }
             else
             {
                 // ── Title ────────────────────────────────────────────────
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                     "SURVEY DASHBOARD - %zu respondents", dataManager.RowCount());
                 ImGui::Separator();
                 ImGui::Spacing();
@@ -683,11 +692,11 @@ int main()
 
                     if (cardCol > 0) ImGui::SameLine(0.f, padX);
 
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.13f, 0.15f, 0.19f, 1.f));
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.14f, 0.10f, 0.26f, 1.f));
                     // Use a stable ID — metric name is unique and never changes mid-frame
                     ImGui::BeginChild(mc.name.c_str(), ImVec2(cardW, cardH), true);
 
-                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "%s", mc.name.c_str());
+                    ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "%s", mc.name.c_str());
                     ImGui::Separator();
                     ImGui::Text("Mean   : %.3f", mc.mean);
                     ImGui::Text("Std Dev: %.3f", mc.stddev);
@@ -707,7 +716,7 @@ int main()
                 ImGui::Spacing();
 
                 // ── Gender breakdown (read from cache) ───────────────────
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "GENDER BREAKDOWN");
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "GENDER BREAKDOWN");
                 ImGui::Spacing();
 
                 ImGui::Columns(3, "##gender_cols", true);
@@ -732,7 +741,7 @@ int main()
                 ImGui::Spacing();
 
                 // ── Full respondent table ────────────────────────────────
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "RAW RECORD MATRIX");
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "RAW RECORD MATRIX");
                 ImGui::Spacing();
 
                 if (ImGui::BeginTable("##raw_table", 9,
@@ -781,84 +790,93 @@ int main()
             if (!metricNames.empty())
             {
                 ImGui::BeginChild("##full_chart_area", ImVec2(0, 0), false);
-
-                // ---- controls row ----
-                ImGui::Text("Metric:");
-                ImGui::SameLine();
-                std::vector<const char*> comboItems;
-                for (const auto& n : metricNames)
-                    comboItems.push_back(n.c_str());
-
-                if (metricComboIdx >= static_cast<int>(metricNames.size()))
-                    metricComboIdx = 0;
-
-                ImGui::Combo("##metric_combo", &metricComboIdx,
-                    comboItems.data(), static_cast<int>(comboItems.size()));
-                ImGui::SameLine();
-                ImGui::Combo("Chart Type", &Statix::UI::g_chartType,
-                    Statix::UI::chartTypeNames, Statix::UI::chartTypeCount);
-
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                // Read from pre-built cache — no allocation per frame.
-                if (metricComboIdx >= static_cast<int>(metricCache.size()))
-                    metricComboIdx = 0;
-                const auto& activeVals = metricCache[metricComboIdx].values;
-
-                // ---- chart body ----
-                switch (Statix::UI::g_chartType)
+                if (!dataLoaded || metricNames.empty() || metricCache.empty())
                 {
-                    // --------------------------------------------------------
-                    // B-31 FIX: Bar chart now drawn via ImGui DrawList inside
-                    // this child window, not via raw OpenGL outside it.
-                    // --------------------------------------------------------
-                case 0: // Bar Chart (ImGui DrawList, self-contained labels)
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
+                        "No dataset loaded. Use File > Load Dataset to begin.");
+                    ImGui::EndChild();
+                }
+                else
                 {
-                    const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
-                    const ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+                    // ---- controls row ----
+                    ImGui::Text("Metric:");
+                    ImGui::SameLine();
+                    std::vector<const char*> comboItems;
+                    for (const auto& n : metricNames)
+                        comboItems.push_back(n.c_str());
 
-                    // Reserve canvas area for hover input.
-                    ImGui::InvisibleButton("##bar_canvas", canvasSize);
+                    if (metricComboIdx >= static_cast<int>(metricNames.size()))
+                        metricComboIdx = 0;
 
-                    const ImVec2 mousePos = ImGui::GetIO().MousePos;
-                    hoverDetector.resize(activeVals.size());
+                    ImGui::Combo("##metric_combo", &metricComboIdx,
+                        comboItems.data(), static_cast<int>(comboItems.size()));
+                    ImGui::SameLine();
+                    ImGui::Combo("Chart Type", &Statix::UI::g_chartType,
+                        Statix::UI::chartTypeNames, Statix::UI::chartTypeCount);
 
-                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    ImGui::Separator();
+                    ImGui::Spacing();
 
-                    // DrawBarChartImGui draws title, axes, ticks, gridlines,
-                    // value labels, and X labels — no external AxisRenderer needed.
-                    const int hoveredBar = DrawBarChartImGui(
-                        dl, canvasPos, canvasSize,
-                        activeVals, hoverDetector.progress(),
-                        mousePos, colorBase, colorHighlight,
-                        metricNames[metricComboIdx]);   // <-- chart title
+                    // Read from pre-built cache — no allocation per frame.
+                    if (metricComboIdx >= static_cast<int>(metricCache.size()))
+                        metricComboIdx = 0;
+                    const auto& activeVals = metricCache[metricComboIdx].values;
 
-                    hoverDetector.tick(ImGui::GetIO().DeltaTime, hoveredBar);
-                    Statix::UI::draw_bar_tooltip(hoveredBar, activeVals);
-                    break;
+                    // ---- chart body ----
+                    switch (Statix::UI::g_chartType)
+                    {
+                        // --------------------------------------------------------
+                        // B-31 FIX: Bar chart now drawn via ImGui DrawList inside
+                        // this child window, not via raw OpenGL outside it.
+                        // --------------------------------------------------------
+                    case 0: // Bar Chart (ImGui DrawList, self-contained labels)
+                    {
+                        const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+                        const ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+
+                        // Reserve canvas area for hover input.
+                        ImGui::InvisibleButton("##bar_canvas", canvasSize);
+
+                        const ImVec2 mousePos = ImGui::GetIO().MousePos;
+                        hoverDetector.resize(activeVals.size());
+
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+                        // DrawBarChartImGui draws title, axes, ticks, gridlines,
+                        // value labels, and X labels — no external AxisRenderer needed.
+                        const int hoveredBar = DrawBarChartImGui(
+                            dl, canvasPos, canvasSize,
+                            activeVals, hoverDetector.progress(),
+                            mousePos, colorBase, colorHighlight,
+                            metricNames[metricComboIdx]);   // <-- chart title
+
+                        hoverDetector.tick(ImGui::GetIO().DeltaTime, hoveredBar);
+                        Statix::UI::draw_bar_tooltip(hoveredBar, activeVals);
+                        break;
+                    }
+
+                    case 1: // Pie Chart
+                        Statix::UI::render_pie_chart(activeVals, { "Low", "Medium", "High" });
+                        break;
+
+                    case 2: // Scatter Plot
+                    {
+                        if (xMetricIdx >= static_cast<int>(metricCache.size())) xMetricIdx = 0;
+                        if (yMetricIdx >= static_cast<int>(metricCache.size())) yMetricIdx = 0;
+                        Statix::UI::render_scatter_plot(
+                            metricCache[xMetricIdx].values,
+                            metricCache[yMetricIdx].values);
+                        break;
+                    }
+
+                    case 3: // Histogram
+                        Statix::UI::render_histogram(activeVals, 10);
+                        break;
+                    }
+
+                    ImGui::EndChild();
                 }
-
-                case 1: // Pie Chart
-                    Statix::UI::render_pie_chart(activeVals, { "Low", "Medium", "High" });
-                    break;
-
-                case 2: // Scatter Plot
-                {
-                    if (xMetricIdx >= static_cast<int>(metricCache.size())) xMetricIdx = 0;
-                    if (yMetricIdx >= static_cast<int>(metricCache.size())) yMetricIdx = 0;
-                    Statix::UI::render_scatter_plot(
-                        metricCache[xMetricIdx].values,
-                        metricCache[yMetricIdx].values);
-                    break;
-                }
-
-                case 3: // Histogram
-                    Statix::UI::render_histogram(activeVals, 10);
-                    break;
-                }
-
-                ImGui::EndChild();
             }
         }
         else if (selectedTab == 2) // ANALYTICS SETTINGS
@@ -869,35 +887,25 @@ int main()
             if (!dataLoaded)
             {
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
                     "No dataset loaded. Use File > Load Dataset to begin.");
             }
             else
             {
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "ANALYTICS SETTINGS");
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                // ── Visual colour pickers ─────────────────────────────────
-                ImGui::TextColored(ImVec4(0.7f, 0.75f, 0.8f, 1.f), "Chart Colours");
-                ImGui::Spacing();
-                ImGui::ColorEdit4("Bar Base Colour", colorBase);
-                ImGui::ColorEdit4("Bar Highlight Colour", colorHighlight);
-
-                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "ANALYTICS SETTINGS");
                 ImGui::Separator();
                 ImGui::Spacing();
 
                 // ── Pearson correlation matrix ────────────────────────────
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                     "PEARSON CORRELATION MATRIX");
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
                     "r values across all five sub-scores (n = %zu)", dataManager.RowCount());
                 ImGui::Spacing();
 
-               
+
                 // Correlation matrix reads entirely from corrCache — zero
                 // computation per frame.
                 const int nm = static_cast<int>(metricCache.size());
@@ -915,7 +923,7 @@ int main()
                     {
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
-                        ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                        ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                             "%s", metricCache[row].name.c_str());
 
                         for (int col = 0; col < nm; ++col)
@@ -927,11 +935,11 @@ int main()
                             }
                             else {
                                 ImVec4 rCol;
-                                if (r > 0.5f) rCol = ImVec4(0.2f, 0.9f, 0.4f, 1.f);
-                                else if (r > 0.2f) rCol = ImVec4(0.6f, 0.9f, 0.4f, 1.f);
-                                else if (r < -0.5f) rCol = ImVec4(1.0f, 0.3f, 0.3f, 1.f);
-                                else if (r < -0.2f) rCol = ImVec4(1.0f, 0.6f, 0.3f, 1.f);
-                                else                rCol = ImVec4(0.8f, 0.8f, 0.8f, 1.f);
+                                if (r > 0.5f) rCol = ImVec4(0.10f, 0.92f, 0.88f, 1.f);
+                                else if (r > 0.2f) rCol = ImVec4(0.65f, 0.40f, 1.00f, 1.f);
+                                else if (r < -0.5f) rCol = ImVec4(1.0f, 0.25f, 0.65f, 1.f);
+                                else if (r < -0.2f) rCol = ImVec4(1.0f, 0.55f, 0.85f, 1.f);
+                                else                rCol = ImVec4(0.75f, 0.68f, 0.95f, 1.f);
                                 ImGui::TextColored(rCol, "%.3f", r);
                             }
                         }
@@ -944,7 +952,7 @@ int main()
                 ImGui::Spacing();
 
                 // ── Linear Regression ────────────────────────────────────
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                     "LINEAR REGRESSION");
                 ImGui::Spacing();
 
@@ -976,11 +984,11 @@ int main()
                     float r = PearsonCorrelation(X, Y);
 
                     ImGui::PushStyleColor(ImGuiCol_ChildBg,
-                        ImVec4(0.11f, 0.13f, 0.17f, 1.f));
+                        ImVec4(0.12f, 0.09f, 0.22f, 1.f));
                     ImGui::BeginChild("##reg_result",
                         ImVec2(0.f, 110.f), true);
 
-                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                    ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                         "%s  →  %s",
                         metricNames[xMetricIdx].c_str(),
                         metricNames[yMetricIdx].c_str());
@@ -998,7 +1006,7 @@ int main()
                         absR >= 0.4f ? "Moderate" :
                         absR >= 0.2f ? "Weak" : "Negligible";
                     const char* direction = r >= 0.f ? "positive" : "negative";
-                    ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.f, 1.f),
+                    ImGui::TextColored(ImVec4(0.45f, 0.90f, 1.00f, 1.f),
                         "Interpretation: %s %s correlation", strength, direction);
 
                     ImGui::EndChild();
@@ -1006,7 +1014,7 @@ int main()
 
                     // Inline scatter with regression line overlay
                     ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(0.7f, 0.75f, 0.8f, 1.f),
+                    ImGui::TextColored(ImVec4(0.75f, 0.60f, 1.00f, 1.f),
                         "Scatter with regression line:");
                     ImGui::Spacing();
 
@@ -1026,10 +1034,10 @@ int main()
 
                     dl->AddRectFilled(origin,
                         ImVec2(origin.x + plotW, origin.y + plotH),
-                        IM_COL32(25, 30, 40, 220));
+                        IM_COL32(18, 12, 38, 220));
                     dl->AddRect(origin,
                         ImVec2(origin.x + plotW, origin.y + plotH),
-                        IM_COL32(80, 90, 110, 180));
+                        IM_COL32(100, 60, 180, 160));
 
                     auto toPixel = [&](float x, float y) -> ImVec2 {
                         float px = origin.x + margin
@@ -1042,24 +1050,24 @@ int main()
                     // Data points
                     for (size_t i = 0; i < X.size(); ++i)
                         dl->AddCircleFilled(toPixel(X[i], Y[i]), 4.f,
-                            IM_COL32(52, 201, 180, 220));
+                            IM_COL32(220, 80, 255, 220));
 
                     // Regression line from minX to maxX
                     float yAtMin = reg.slope * minX + reg.intercept;
                     float yAtMax = reg.slope * maxX + reg.intercept;
                     dl->AddLine(toPixel(minX, yAtMin),
                         toPixel(maxX, yAtMax),
-                        IM_COL32(250, 200, 50, 220), 2.f);
+                        IM_COL32(0, 230, 230, 220), 2.f);
 
                     // X-axis min/max labels
                     char buf[24];
                     std::snprintf(buf, sizeof(buf), "%.1f", minX);
                     dl->AddText(ImVec2(origin.x + margin, origin.y + plotH - 16.f),
-                        IM_COL32(180, 190, 200, 200), buf);
+                        IM_COL32(180, 140, 255, 200), buf);
                     std::snprintf(buf, sizeof(buf), "%.1f", maxX);
                     ImVec2 tsz = ImGui::CalcTextSize(buf);
                     dl->AddText(ImVec2(origin.x + plotW - margin - tsz.x, origin.y + plotH - 16.f),
-                        IM_COL32(180, 190, 200, 200), buf);
+                        IM_COL32(180, 140, 255, 200), buf);
 
                     ImGui::Dummy(ImVec2(plotW, plotH + 8.f));
                 }
@@ -1074,7 +1082,7 @@ int main()
                 ImGui::Spacing();
 
                 // ── Descriptive stats table ───────────────────────────────
-                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                     "DESCRIPTIVE STATISTICS");
                 ImGui::Spacing();
 
@@ -1097,7 +1105,7 @@ int main()
                         if (mc.values.empty()) continue;
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
-                        ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                        ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f),
                             "%s", mc.name.c_str());
                         ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", mc.mean);
                         ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", mc.median);
@@ -1109,6 +1117,342 @@ int main()
                     ImGui::EndTable();
                 }
             }
+
+            ImGui::EndChild();
+        }
+
+        // -----------------------------------------------------------
+        // Theme Settings Tab (selectedTab == 3)
+        // -----------------------------------------------------------
+        else if (selectedTab == 3)
+        {
+            ImGui::BeginChild("##theme_settings", ImVec2(0, 0), false,
+                ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "THEME SETTINGS");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Bar Chart Colors ──────────────────────────────────────
+            ImGui::TextColored(ImVec4(0.75f, 0.60f, 1.00f, 1.f), "Bar Chart Colors");
+            ImGui::Spacing();
+
+            ImGui::ColorEdit4("Bar Base Color", colorBase);
+            ImGui::ColorEdit4("Bar Highlight Color", colorHighlight);
+
+            // Live preview of the gradient blend
+            ImGui::Spacing();
+            ImGui::Text("Gradient Preview:");
+            ImGui::SameLine();
+            {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                const float pw = 200.f, ph = 20.f;
+                ImU32 left = IM_COL32(
+                    (int)(colorBase[0] * 255), (int)(colorBase[1] * 255),
+                    (int)(colorBase[2] * 255), (int)(colorBase[3] * 255));
+                ImU32 right = IM_COL32(
+                    (int)(colorHighlight[0] * 255), (int)(colorHighlight[1] * 255),
+                    (int)(colorHighlight[2] * 255), (int)(colorHighlight[3] * 255));
+                dl->AddRectFilledMultiColor(p, ImVec2(p.x + pw, p.y + ph),
+                    left, right, right, left);
+                dl->AddRect(p, ImVec2(p.x + pw, p.y + ph),
+                    IM_COL32(160, 100, 220, 180), 4.f);
+                ImGui::Dummy(ImVec2(pw + 4.f, ph + 4.f));
+            }
+
+            // Reset button
+            ImGui::Spacing();
+            if (ImGui::Button("Reset Bar Colors to Default"))
+            {
+                colorBase[0] = 0.42f; colorBase[1] = 0.14f;
+                colorBase[2] = 0.82f; colorBase[3] = 1.0f;
+                colorHighlight[0] = 0.10f; colorHighlight[1] = 0.88f;
+                colorHighlight[2] = 0.88f; colorHighlight[3] = 1.0f;
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Window / UI Colors ────────────────────────────────────
+            ImGui::TextColored(ImVec4(0.75f, 0.60f, 1.00f, 1.f), "Window & UI Colors");
+            ImGui::Spacing();
+
+            ImGuiStyle& style = ImGui::GetStyle();
+
+            // Expose the most impactful colors as pickers
+            static float winBg[4] = { 0.09f, 0.07f, 0.16f, 1.f };
+            static float accentViolet[4] = { 0.72f, 0.35f, 1.00f, 1.f };
+            static float accentCyan[4] = { 0.10f, 0.88f, 0.88f, 1.f };
+            static float textColor[4] = { 0.95f, 0.92f, 1.00f, 1.f };
+            static float frameBg[4] = { 0.18f, 0.12f, 0.32f, 1.f };
+            static float menuBarBg[4] = { 0.14f, 0.08f, 0.28f, 1.f };
+
+            bool changed = false;
+
+            if (ImGui::ColorEdit4("Window Background", winBg))     changed = true;
+            if (ImGui::ColorEdit4("Accent – Violet", accentViolet)) changed = true;
+            if (ImGui::ColorEdit4("Accent – Cyan", accentCyan))   changed = true;
+            if (ImGui::ColorEdit4("Text Color", textColor))    changed = true;
+            if (ImGui::ColorEdit4("Frame Background", frameBg))      changed = true;
+            if (ImGui::ColorEdit4("Menu Bar", menuBarBg))    changed = true;
+
+            if (changed)
+            {
+                // Window backgrounds
+                style.Colors[ImGuiCol_WindowBg] = ImVec4(winBg[0], winBg[1], winBg[2], winBg[3]);
+                style.Colors[ImGuiCol_ChildBg] = ImVec4(winBg[0] + 0.02f, winBg[1] + 0.02f, winBg[2] + 0.04f, 1.f);
+                style.Colors[ImGuiCol_PopupBg] = ImVec4(winBg[0] + 0.03f, winBg[1] + 0.02f, winBg[2] + 0.06f, 0.97f);
+                style.Colors[ImGuiCol_MenuBarBg] = ImVec4(menuBarBg[0], menuBarBg[1], menuBarBg[2], menuBarBg[3]);
+
+                // Text
+                style.Colors[ImGuiCol_Text] = ImVec4(textColor[0], textColor[1], textColor[2], textColor[3]);
+
+                // Frames
+                style.Colors[ImGuiCol_FrameBg] = ImVec4(frameBg[0], frameBg[1], frameBg[2], frameBg[3]);
+                style.Colors[ImGuiCol_FrameBgHovered] = ImVec4(frameBg[0] + 0.12f, frameBg[1] + 0.03f, frameBg[2] + 0.23f, 1.f);
+                style.Colors[ImGuiCol_FrameBgActive] = ImVec4(frameBg[0] + 0.22f, frameBg[1] + 0.06f, frameBg[2] + 0.38f, 1.f);
+
+                // Buttons use cyan accent on hover
+                style.Colors[ImGuiCol_Button] = ImVec4(accentViolet[0] * 0.5f, accentViolet[1] * 0.4f, accentViolet[2] * 0.8f, 1.f);
+                style.Colors[ImGuiCol_ButtonHovered] = ImVec4(accentCyan[0], accentCyan[1], accentCyan[2], 1.f);
+                style.Colors[ImGuiCol_ButtonActive] = ImVec4(accentCyan[0] * 0.8f, accentCyan[1], accentCyan[2] * 0.9f, 1.f);
+
+                // Headers
+                style.Colors[ImGuiCol_Header] = ImVec4(accentViolet[0] * 0.42f, accentViolet[1] * 0.2f, accentViolet[2] * 0.73f, 1.f);
+                style.Colors[ImGuiCol_HeaderHovered] = ImVec4(accentViolet[0] * 0.58f, accentViolet[1] * 0.25f, accentViolet[2] * 0.97f, 1.f);
+                style.Colors[ImGuiCol_HeaderActive] = ImVec4(accentCyan[0], accentCyan[1] * 0.80f, accentCyan[2], 1.f);
+
+                // Separator & borders
+                style.Colors[ImGuiCol_Separator] = ImVec4(accentViolet[0] * 0.76f, accentViolet[1] * 0.35f, accentViolet[2], 0.55f);
+                style.Colors[ImGuiCol_Border] = ImVec4(accentViolet[0] * 0.76f, accentViolet[1] * 0.35f, accentViolet[2], 0.45f);
+
+                // Scrollbar
+                style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(accentViolet[0] * 0.63f, accentViolet[1] * 0.28f, accentViolet[2], 1.f);
+                style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(accentViolet[0] * 0.76f, accentViolet[1] * 0.39f, accentViolet[2], 1.f);
+                style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(accentCyan[0], accentCyan[1], accentCyan[2], 1.f);
+
+                // Table
+                style.Colors[ImGuiCol_TableHeaderBg] = ImVec4(accentViolet[0] * 0.28f, accentViolet[1] * 0.14f, accentViolet[2] * 0.5f, 1.f);
+                style.Colors[ImGuiCol_TableBorderStrong] = ImVec4(accentViolet[0] * 0.76f, accentViolet[1] * 0.35f, accentViolet[2], 0.80f);
+                style.Colors[ImGuiCol_TableBorderLight] = ImVec4(accentViolet[0] * 0.42f, accentViolet[1] * 0.21f, accentViolet[2] * 0.76f, 0.50f);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Rounding ──────────────────────────────────────────────
+            ImGui::TextColored(ImVec4(0.75f, 0.60f, 1.00f, 1.f), "Corner Rounding");
+            ImGui::Spacing();
+            ImGui::SliderFloat("Window Rounding", &style.WindowRounding, 0.f, 20.f, "%.0f px");
+            ImGui::SliderFloat("Frame Rounding", &style.FrameRounding, 0.f, 12.f, "%.0f px");
+            ImGui::SliderFloat("Child Rounding", &style.ChildRounding, 0.f, 16.f, "%.0f px");
+            ImGui::SliderFloat("Popup Rounding", &style.PopupRounding, 0.f, 16.f, "%.0f px");
+            ImGui::SliderFloat("Scrollbar Rounding", &style.ScrollbarRounding, 0.f, 12.f, "%.0f px");
+            ImGui::SliderFloat("Tab Rounding", &style.TabRounding, 0.f, 12.f, "%.0f px");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Spacing ───────────────────────────────────────────────
+            ImGui::TextColored(ImVec4(0.75f, 0.60f, 1.00f, 1.f), "Spacing & Padding");
+            ImGui::Spacing();
+            ImGui::SliderFloat2("Item Spacing", (float*)&style.ItemSpacing, 0.f, 20.f, "%.0f");
+            ImGui::SliderFloat2("Frame Padding", (float*)&style.FramePadding, 0.f, 16.f, "%.0f");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Reset All ─────────────────────────────────────────────
+            if (ImGui::Button("Reset ALL Theme to Default", ImVec2(240.f, 0.f)))
+            {
+                ImGui::StyleColorsDark();
+                // restore geometry only:
+                ImGuiStyle& s = ImGui::GetStyle();
+                s.WindowRounding = 10.f; s.ChildRounding = 8.f;
+                s.FrameRounding = 6.f;  s.PopupRounding = 8.f;
+                s.ScrollbarRounding = 6.f; s.TabRounding = 6.f;
+                s.ItemSpacing = ImVec2(10.f, 6.f);
+                s.FramePadding = ImVec2(8.f, 4.f);
+                // reset bar colors
+                colorBase[0] = 0.42f; colorBase[1] = 0.14f; colorBase[2] = 0.82f; colorBase[3] = 1.0f;
+                colorHighlight[0] = 0.10f; colorHighlight[1] = 0.88f; colorHighlight[2] = 0.88f; colorHighlight[3] = 1.0f;
+            }
+
+            ImGui::EndChild();
+        }
+        else if (selectedTab == 4) // NEW DATA FROM TEXT
+        {
+            ImGui::BeginChild("##text_input_tab", ImVec2(0, 0), false,
+                ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "NEW DATA FROM TEXT");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::TextWrapped(
+                "Paste raw CSV rows below (no header needed — the schema is applied automatically).\n"
+                "Format: Gender, AgeGroup, Education, Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12\n"
+                "Click \"Load from Text\" to replace the current dataset, or \"Append to Dataset\" to add rows.");
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Text area ─────────────────────────────────────────────────
+            static char textInputBuffer[131072] = "";  // 128 KB
+            ImGui::Text("Paste CSV rows:");
+            ImGui::InputTextMultiline("##text_input_area", textInputBuffer,
+                IM_ARRAYSIZE(textInputBuffer),
+                ImVec2(-1.f, 300.f),
+                ImGuiInputTextFlags_AllowTabInput);
+
+            ImGui::Spacing();
+
+            // ── Row count preview ─────────────────────────────────────────
+            {
+                int lineCount = 0;
+                for (char* p = textInputBuffer; *p; ++p)
+                    if (*p == '\n') ++lineCount;
+                if (textInputBuffer[0] != '\0') ++lineCount; // count last line if no trailing newline
+                ImGui::TextDisabled("Lines detected: %d (each non-empty line = 1 respondent)", lineCount);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Action buttons ────────────────────────────────────────────
+            bool doLoad = ImGui::Button("Load from Text", ImVec2(180.f, 0.f));
+            ImGui::SameLine(0.f, 16.f);
+            bool doClear = ImGui::Button("Clear Text Area", ImVec2(140.f, 0.f));
+
+            // Helper: shared parse + load logic
+            auto ParseAndLoad = [&](bool append) -> bool
+                {
+                    if (textInputBuffer[0] == '\0') {
+                        ImGui::SetClipboardText("Text area is empty.");
+                        ImGui::OpenPopup("Parse Error");
+                        return false;
+                    }
+
+                    const std::vector<std::string> colNames = Statix::DataManager::GetColumnNames();
+                    std::string headerLine;
+                    for (size_t i = 0; i < colNames.size(); ++i) {
+                        if (i) headerLine += ',';
+                        headerLine += colNames[i];
+                    }
+                    headerLine += '\n';
+
+                    std::filesystem::path tmpPath =
+                        std::filesystem::temp_directory_path() / "statix_textinput_data.csv";
+
+                    bool writeOk = false;
+                    {
+                        std::ofstream tmp(tmpPath);
+                        if (tmp.good()) {
+                            tmp << headerLine << textInputBuffer;
+                            writeOk = tmp.good();
+                        }
+                    }
+
+                    if (!writeOk) {
+                        ImGui::SetClipboardText("Failed to write temporary file.");
+                        std::filesystem::remove(tmpPath);
+                        ImGui::OpenPopup("Parse Error");
+                        return false;
+                    }
+
+                    Statix::Table rawTable;
+                    std::string   parseError;
+                    if (!Statix::FileImporter::LoadFile(tmpPath.string(), rawTable, parseError)) {
+                        ImGui::SetClipboardText(parseError.c_str());
+                        std::filesystem::remove(tmpPath);
+                        ImGui::OpenPopup("Parse Error");
+                        return false;
+                    }
+
+                    std::string loadError;
+                    bool ok = false;
+                    if (append && dataLoaded) {
+                        ok = dataManager.AppendTable(rawTable, loadError);
+                    }
+                    else {
+                        ok = dataManager.LoadTable(rawTable, loadError);
+                    }
+
+                    std::filesystem::remove(tmpPath);
+
+                    if (!ok) {
+                        ImGui::SetClipboardText(loadError.c_str());
+                        ImGui::OpenPopup("Data Validation Error");
+                        return false;
+                    }
+
+                    metricNames = Statix::DataManager::GetMetricNames();
+                    metricComboIdx = 0;
+                    xMetricIdx = 0;
+                    yMetricIdx = 1;
+                    dataLoaded = true;
+                    RebuildCache();
+
+                    if (!metricNames.empty()) {
+                        auto vec = dataManager.GetMetricColumn(metricNames[0]);
+                        chartRenderer.update_geometry(vec, hoverDetector.progress(),
+                            colorBase, colorHighlight);
+                    }
+
+                    lastLoadedInfo = (append ? "Appended rows. Total: " : "Loaded ")
+                        + std::to_string(dataManager.RowCount()) + " respondents from text input.";
+                    ImGui::OpenPopup("Data Loaded");
+                    return true;
+                };
+
+            if (doLoad)  ParseAndLoad(false);  // replace
+            if (doClear) std::memset(textInputBuffer, 0, sizeof(textInputBuffer));
+
+            ImGui::Spacing();
+
+            // ── Append button (only shown when data already exists) ───────
+            if (dataLoaded)
+            {
+                ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
+                    "Current dataset: %zu respondents", dataManager.RowCount());
+                ImGui::Spacing();
+                if (ImGui::Button("Append to Current Dataset", ImVec2(220.f, 0.f)))
+                    ParseAndLoad(true);
+
+                ImGui::SameLine(0.f, 16.f);
+                ImGui::TextDisabled("(adds rows without discarding existing data)");
+            }
+            else
+            {
+                ImGui::TextColored(ImVec4(0.55f, 0.45f, 0.75f, 1.f),
+                    "No dataset loaded yet — \"Load from Text\" will create one.");
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // ── Quick format reference ─────────────────────────────────────
+            ImGui::TextColored(ImVec4(0.72f, 0.35f, 1.00f, 1.f), "FORMAT REFERENCE");
+            ImGui::Spacing();
+            ImGui::TextDisabled("One respondent per line, values comma-separated:");
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.07f, 0.20f, 1.f));
+            ImGui::BeginChild("##format_ref", ImVec2(0.f, 80.f), true);
+            ImGui::TextDisabled("Male,18-24,Bachelor,3,4,2,5,3,4,3,2,4,5,3,4");
+            ImGui::TextDisabled("Female,25-34,Master,4,5,4,3,5,4,5,4,3,4,5,4");
+            ImGui::TextDisabled("Other,35-44,High School,2,3,2,4,3,2,3,4,2,3,2,3");
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
 
             ImGui::EndChild();
         }
@@ -1126,7 +1470,8 @@ int main()
         //    colour matches the dark theme to the right of the sidebar.
         // -----------------------------------------------------------
         glViewport(sidebarPixelWidth, 0, fbW - sidebarPixelWidth, fbH);
-        glClearColor(0.08f, 0.09f, 0.11f, 1.0f);
+        ImVec4 bg = ImGui::GetStyle().Colors[ImGuiCol_WindowBg];
+        glClearColor(bg.x, bg.y, bg.z, bg.w);
         glClear(GL_COLOR_BUFFER_BIT);
 
         // Restore full viewport before ImGui render pass.
@@ -1142,5 +1487,6 @@ int main()
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
+ 
     return 0;
-}
+    }

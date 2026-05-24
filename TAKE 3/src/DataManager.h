@@ -105,8 +105,11 @@ namespace Statix {
 
         // B-24 FIX: Made static so it can be called as DataManager::GetColumnNames()
         static std::vector<std::string> GetColumnNames();
-
+        bool AppendTable(const Table& table, std::string& outError);
     private:
+        bool ParseRow(const std::vector<std::string>& row,
+            SurveyRespondent& out,
+            std::string& outError);
         std::vector<SurveyRespondent> respondents_;
 
         // Helpers ------------------------------------------------------------

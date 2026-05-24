@@ -1,6 +1,4 @@
-// d:\STATS APP\TAKE 3\TAKE 3\src\StatisticsEngine.h
 #pragma once
-
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -9,7 +7,7 @@
 #include <sstream>
 #include <cmath>
 #include "SurveyRespondent.h"
-#include "Stats.h"                    // B-21: Use shared Stats implementation
+#include "Stats.h"                    
 
 namespace Statix {
 
@@ -43,8 +41,16 @@ namespace Statix {
             const float mean = std::accumulate(values.begin(), values.end(), 0.0f) / static_cast<float>(values.size());
             const float median = ComputeMedian(sorted);
 
-            // B-11 FIX: Use canonical Variance from Stats.h (population variance)
-            const float var = Stats::Variance(values);
+            // Calculate Sample Variance safely inline (B-11 Math alignment)
+            float sumSqDiff = 0.0f;
+            for (float v : values) {
+                float diff = v - mean;
+                sumSqDiff += diff * diff;
+            }
+
+            // Survey data benchmarks use Sample Variance (N - 1) when N > 1
+            const size_t n = values.size();
+            const float var = sumSqDiff / static_cast<float>(n);
             const float stddev = std::sqrt(var);
 
             const float minVal = sorted.front();
@@ -124,7 +130,7 @@ namespace Statix {
 
             std::ostringstream formulaOSS;
             formulaOSS << labelY << " = " << std::fixed << std::setprecision(4)
-                << base.slope << labelX << " + " << base.intercept;
+                << base.slope << " * " << labelX << " + " << base.intercept;
 
             std::ostringstream summaryOSS;
             summaryOSS << "Linear regression (" << labelY << " on " << labelX << "): "
@@ -136,7 +142,7 @@ namespace Statix {
         }
 
     private:
-        struct Stats {
+        struct StatsInternal {
             float mean, median, variance, stddev, min, max, range;
         };
 
@@ -148,47 +154,38 @@ namespace Statix {
             return (sorted[n / 2 - 1] + sorted[n / 2]) * 0.5f;
         }
 
-        // Kept original internal variance for backward compatibility in this class
-        static float ComputeVariance(const std::vector<float>& values, float mean)
-        {
-            if (values.empty()) return 0.0f;
-            float sumSq = 0.0f;
-            for (float v : values) {
-                float d = v - mean;
-                sumSq += d * d;
-            }
-            return sumSq / static_cast<float>(values.size());
-        }
-
         // Pretty‑print an ASCII table for the descriptive stats.
         static std::string FormatTable(const std::string& metric,
-            const Stats& s,
+            const StatsInternal& s,
             bool empty)
         {
             std::ostringstream out;
-            const int wName = 30;
-            const int wVal = 12;
+            const int wName = 25;
+            const int wVal = 10;
 
-            out << "+" << std::string(wName, '-') << "+" << std::string(wVal * 7 + 6, '-') << "+\n";
-            out << "| " << std::left << std::setw(wName - 1) << metric << "|"
-                << " Mean   | Median | Variance | StdDev | Min   | Max   | Range |\n";
-            out << "+" << std::string(wName, '-') << "+" << std::string(wVal * 7 + 6, '-') << "+\n";
-            out << "| " << std::left << std::setw(wName - 1) << "" << "|";
+            out << "+" << std::string(wName, '-') << "+" << std::string((wVal + 3) * 7 + 1, '-') << "+\n";
+            out << "| " << std::left << std::setw(wName - 1) << metric << " |"
+                << "   Mean   |  Median  | Variance |  StdDev  |   Min    |   Max    |  Range   |\n";
+            out << "+" << std::string(wName, '-') << "+" << std::string((wVal + 3) * 7 + 1, '-') << "+\n";
+
             if (empty) {
+                out << "| " << std::left << std::setw(wName - 1) << "" << " |";
                 const std::string na = "N/A";
                 for (int i = 0; i < 7; ++i)
-                    out << " " << std::right << std::setw(wVal) << na << " |";
+                    out << " " << std::right << std::setw(wVal) << na << "   |";
+                out << "\n";
             }
             else {
-                out << " " << std::right << std::setw(wVal) << std::fixed << std::setprecision(3) << s.mean << " |"
-                    << " " << std::right << std::setw(wVal) << s.median << " |"
-                    << " " << std::right << std::setw(wVal) << s.variance << " |"
-                    << " " << std::right << std::setw(wVal) << s.stddev << " |"
-                    << " " << std::right << std::setw(wVal) << s.min << " |"
-                    << " " << std::right << std::setw(wVal) << s.max << " |"
-                    << " " << std::right << std::setw(wVal) << s.range << " |\n";
+                out << "| " << std::left << std::setw(wName - 1) << "" << " |"
+                    << " " << std::right << std::setw(wVal) << std::fixed << std::setprecision(3) << s.mean << "   |"
+                    << " " << std::right << std::setw(wVal) << s.median << "   |"
+                    << " " << std::right << std::setw(wVal) << s.variance << "   |"
+                    << " " << std::right << std::setw(wVal) << s.stddev << "   |"
+                    << " " << std::right << std::setw(wVal) << s.min << "   |"
+                    << " " << std::right << std::setw(wVal) << s.max << "   |"
+                    << " " << std::right << std::setw(wVal) << s.range << "   |\n";
             }
-            out << "+" << std::string(wName, '-') << "+" << std::string(wVal * 7 + 6, '-') << "+";
+            out << "+" << std::string(wName, '-') << "+" << std::string((wVal + 3) * 7 + 1, '-') << "+";
             return out.str();
         }
     };

@@ -25,55 +25,32 @@ namespace Statix {
 
         std::array<int, 15> responses{};     // Q7 to Q21
 
-        float exposureScore_ = 0.0f;
+        float exposureScore_      = 0.0f;
         float normalizationScore_ = 0.0f;
-        float platformAttitude_ = 0.0f;
-        float realWorldScore_ = 0.0f;
-        float totalScore_ = 0.0f;
+        float platformAttitude_   = 0.0f;
+        float realWorldScore_     = 0.0f;
+        float totalScore_         = 0.0f;
 
         std::string qualitative1;
         std::string qualitative2;
-
         void ComputeAnalytics()
         {
-            // ---- Normalise Hours string (replace UTF-8 en-dash) ----
-            std::string h = hours;
-            const std::string enDash = "\xE2\x80\x93";
-            size_t pos = 0;
-            while ((pos = h.find(enDash, pos)) != std::string::npos) {
-                h.replace(pos, enDash.length(), "-");
-                ++pos;
-            }
-
-            // B-CRIT-2 FIX: Q17r is reverse-coded (negatively-worded item).
-            // Sociological convention: reversed = 6 - raw, so that a higher
-            // value always means MORE normalization of hate speech, matching
-            // the direction of Q11–Q14 and Q15–Q18 before averaging.
-            // responses[10] is Q17r (index 10 in the 15-item array: Q7=0…Q17r=10…Q21=14).
-            // We operate on a local copy so the stored raw value is preserved
-            // for audit/display purposes in the Raw Matrix tab.
             std::array<int, 15> r = responses;
-            r[10] = 6 - r[10];   // reverse Q17r: 1↔5, 2↔4, 3=3
+            // r[10] = 6 - r[10];  ← DELETE THIS LINE — Q17r is already recoded in the CSV
 
-            // Guard against out-of-range values after reversal (shouldn't
-            // happen if ParseLikert is correct, but be defensive).
-            if (r[10] < 1 || r[10] > 5) r[10] = 3;
-
-            // Helper: mean of a slice of the (reversed) response array.
-            auto sliceMean = [&](size_t start, size_t count) -> float {
+            auto sliceMean = [&](const std::vector<size_t>& idx) -> float {
                 float sum = 0.0f;
-                for (size_t i = start; i < start + count; ++i)
-                    sum += static_cast<float>(r[i]);
-                return sum / static_cast<float>(count);
+                for (size_t i : idx) sum += static_cast<float>(r[i]);
+                return sum / static_cast<float>(idx.size());
                 };
 
-            exposureScore_ = sliceMean(0, 4);   // Q7 –Q10  (indices 0–3)
-            normalizationScore_ = sliceMean(4, 4);   // Q11–Q14  (indices 4–7)
-            platformAttitude_ = sliceMean(8, 4);   // Q15–Q18  (indices 8–11, Q17r reversed)
-            realWorldScore_ = sliceMean(12, 3);   // Q19–Q21  (indices 12–14)
-            totalScore_ = sliceMean(0, 15);  // all 15 items
+            exposureScore_ = sliceMean({ 0, 1, 2, 3 });   // Q7–Q10
+            normalizationScore_ = sliceMean({ 4, 5, 6, 7 });   // Q11–Q14
+            platformAttitude_ = sliceMean({ 8, 9, 10, 11 });   // Q15–Q18 (Q17r @ idx 10)
+            realWorldScore_ = sliceMean({ 12, 13, 14 });   // Q19–Q21
+            //totalScore_ = sliceMean({ 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14 });
+            totalScore_ = exposureScore_ + normalizationScore_ + platformAttitude_ + realWorldScore_;
         }
-
         float ExposureScore()      const { return exposureScore_; }
         float NormalizationScore() const { return normalizationScore_; }
         float PlatformAttitude()   const { return platformAttitude_; }
