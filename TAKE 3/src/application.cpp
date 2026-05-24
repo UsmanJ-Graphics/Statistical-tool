@@ -864,6 +864,26 @@ int main()
                     {
                         if (xMetricIdx >= static_cast<int>(metricCache.size())) xMetricIdx = 0;
                         if (yMetricIdx >= static_cast<int>(metricCache.size())) yMetricIdx = 0;
+
+                        // ── Axis selectors ────────────────────────────────────────
+                        std::vector<const char*> scatterCombo;
+                        for (const auto& n : metricNames)
+                            scatterCombo.push_back(n.c_str());
+
+                        ImGui::Text("X Axis:");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(160.f);
+                        ImGui::Combo("##scatterX", &xMetricIdx,
+                            scatterCombo.data(), static_cast<int>(scatterCombo.size()));
+                        ImGui::SameLine(0.f, 20.f);
+                        ImGui::Text("Y Axis:");
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(160.f);
+                        ImGui::Combo("##scatterY", &yMetricIdx,
+                            scatterCombo.data(), static_cast<int>(scatterCombo.size()));
+
+                        ImGui::Spacing();
+
                         Statix::UI::render_scatter_plot(
                             metricCache[xMetricIdx].values,
                             metricCache[yMetricIdx].values);
