@@ -83,128 +83,203 @@ namespace Statix {
         // legend with colour swatch + label + value.
         // ====================================================================
         void render_pie_chart(const std::vector<float>& values,
-            const std::vector<std::string>& labels)
+            const std::vector<std::string>& /*labels*/)
         {
             if (values.empty()) return;
 
-            float total = 0.f;
-            for (float v : values) total += (v > 0.f ? v : 0.f);
+            // ── Bin raw respondent scores into 4 meaningful groups ────────
+            // Likert scores range 1-5. Bins: Low <2.5, Medium 2.5-3.5,
+            // High 3.5-4.25, Very High >=4.25
+            struct Bin { const char* label; float lo; float hi; ImU32 color; int count; float sum; };
+            Bin bins[4] = {
+                { "Low (1.0-2.5)",       1.f,  2.5f, IM_COL32(235, 87, 52,255), 0, 0.f },
+                { "Medium (2.5-3.5)",    2.5f, 3.5f, IM_COL32(250,200, 50,255), 0, 0.f },
+                { "High (3.5-4.25)",     3.5f, 4.25f,IM_COL32(52,201,180,255), 0, 0.f },
+                { "Very High (4.25-5)", 4.25f, 5.01f,IM_COL32(133, 92,224,255), 0, 0.f },
+            };
+            for (float v : values) {
+                for (auto& b : bins)
+                    if (v >= b.lo && v < b.hi) { ++b.count; b.sum += v; break; }
+            }
+            float total = (float)values.size();
             if (total <= 0.f) return;
+
+            // ── Persistent hover animation state ─────────────────────────
+            // explodeProgress[i] in [0,1]: 1 = fully exploded outward.
+            static float explodeProgress[4] = {};
+            static int   lastHovered = -1;
+            const  float kExplodeSpeed = 6.f;
+            const  float kExplodeDist = 18.f;   // pixels outward when fully hovered
+            float        dt = ImGui::GetIO().DeltaTime;
 
             // ── Title ────────────────────────────────────────────────────
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.f);
             {
-                const char* title = "Distribution of Respondent Groups";
-                float titleW = ImGui::CalcTextSize(title).x;
+                const char* title = "Score Distribution (Respondent Groups)";
+                float tw = ImGui::CalcTextSize(title).x;
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                    (ImGui::GetContentRegionAvail().x - titleW) * 0.5f);
+                    (ImGui::GetContentRegionAvail().x - tw) * 0.5f);
                 ImGui::TextColored(ImVec4(0.85f, 0.9f, 0.95f, 1.f), "%s", title);
             }
             ImGui::Spacing();
 
             ImDrawList* draw = ImGui::GetWindowDrawList();
-            ImVec2      centre = ImGui::GetCursorScreenPos();
             float       avail = ImGui::GetContentRegionAvail().x;
-            float       radius = avail * 0.30f;
-            centre.x += avail * 0.5f;
-            centre.y += radius + 10.f;
+            float       radius = std::min(avail * 0.32f, 160.f);
 
-            // 8-colour palette, perceptually distinct
-            static const ImU32 kSliceColors[] = {
-                IM_COL32(52,201,180,255),  // teal
-                IM_COL32(235, 87, 52,255),  // vermillion
-                IM_COL32(250,200, 50,255),  // amber
-                IM_COL32(133, 92,224,255),  // violet
-                IM_COL32(60,179, 90,255),  // green
-                IM_COL32(224, 92,160,255),  // rose
-                IM_COL32(66,148,230,255),  // sky blue
-                IM_COL32(230,145, 40,255),  // orange
-            };
-            static constexpr int kNumColors = IM_ARRAYSIZE(kSliceColors);
+            // Centre — leave room for explode offset on all sides
+            ImVec2 baseCentre = ImGui::GetCursorScreenPos();
+            baseCentre.x += avail * 0.5f;
+            baseCentre.y += radius + kExplodeDist + 14.f;
 
-            float  startAngle = -IM_PI * 0.5f;
-            int    hoveredSlice = -1;
             ImVec2 mousePos = ImGui::GetMousePos();
 
-            for (size_t i = 0; i < values.size(); ++i)
+            // ── Pass 1: hit-test to find hovered slice ────────────────────
+            // Uses proper angle-based test: check distance <= radius AND
+            // angle falls within the slice's arc.
+            int  hoveredSlice = -1;
             {
-                if (values[i] <= 0.f) continue;
-
-                float sweep = (values[i] / total) * IM_PI * 2.f;
-                float endAngle = startAngle + sweep;
-                ImU32 col = kSliceColors[i % kNumColors];
-
-                // Filled wedge
-                draw->PathLineTo(centre);
-                draw->PathArcTo(centre, radius, startAngle, endAngle, 48);
-                draw->PathFillConvex(col);
-
-                // Separator stroke
-                draw->PathLineTo(centre);
-                draw->PathArcTo(centre, radius, startAngle, endAngle, 48);
-                draw->PathStroke(IM_COL32(20, 25, 32, 180), false, 2.f);
-
-                // Hover detection
-                float  midAngle = startAngle + sweep * 0.5f;
-                ImVec2 mid(centre.x + cosf(midAngle) * radius * 0.65f,
-                    centre.y + sinf(midAngle) * radius * 0.65f);
-                float  dmx = mousePos.x - mid.x, dmy = mousePos.y - mid.y;
-                if (dmx * dmx + dmy * dmy < radius * radius * 0.7f)
-                    hoveredSlice = (int)i;
-
-                // Percentage label inside slice (only if wedge is large enough)
-                if (sweep > 0.25f)
+                float dx = mousePos.x - baseCentre.x;
+                float dy = mousePos.y - baseCentre.y;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist <= radius + kExplodeDist)
                 {
-                    char pctBuf[12];
-                    float pct = 100.f * values[i] / total;
-                    std::snprintf(pctBuf, sizeof(pctBuf), "%.0f%%", pct);
-                    ImVec2 lsz = ImGui::CalcTextSize(pctBuf);
-                    float  lr = radius * 0.62f;
-                    ImVec2 lpos(centre.x + cosf(midAngle) * lr - lsz.x * 0.5f,
-                        centre.y + sinf(midAngle) * lr - lsz.y * 0.5f);
-                    draw->AddText(lpos, IM_COL32(255, 255, 255, 230), pctBuf);
+                    float mouseAngle = atan2f(dy, dx);   // [-pi, pi]
+                    float sa = -IM_PI * 0.5f;
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        if (bins[i].count == 0) { continue; }
+                        float sweep = (bins[i].count / total) * IM_PI * 2.f;
+                        float ea = sa + sweep;
+
+                        // Normalise mouseAngle into [sa, ea] range
+                        float a = mouseAngle;
+                        while (a < sa)      a += IM_PI * 2.f;
+                        while (a > sa + IM_PI * 2.f) a -= IM_PI * 2.f;
+
+                        if (a >= sa && a <= ea)
+                        {
+                            // Also check against the exploded centre for accuracy
+                            float mid = sa + sweep * 0.5f;
+                            ImVec2 sliceCentre(
+                                baseCentre.x + cosf(mid) * explodeProgress[i] * kExplodeDist,
+                                baseCentre.y + sinf(mid) * explodeProgress[i] * kExplodeDist);
+                            float sdx = mousePos.x - sliceCentre.x;
+                            float sdy = mousePos.y - sliceCentre.y;
+                            if (sdx * sdx + sdy * sdy <= (radius + kExplodeDist) * (radius + kExplodeDist))
+                                hoveredSlice = i;
+                        }
+                        sa = ea;
+                    }
                 }
-
-                startAngle = endAngle;
             }
 
-            // Advance cursor past the pie
-            ImGui::Dummy(ImVec2(avail, radius * 2.f + 20.f));
-
-            // Tooltip
-            if (hoveredSlice >= 0)
+            // ── Advance explode animation ─────────────────────────────────
+            for (int i = 0; i < 4; ++i)
             {
-                float pct = 100.f * values[hoveredSlice] / total;
-                const char* lbl = (hoveredSlice < (int)labels.size())
-                    ? labels[hoveredSlice].c_str() : "Group";
-                ImGui::SetTooltip("%s\nValue: %.2f\nShare: %.1f%%",
-                    lbl, values[hoveredSlice], pct);
+                float target = (i == hoveredSlice) ? 1.f : 0.f;
+                explodeProgress[i] += (target - explodeProgress[i]) * kExplodeSpeed * dt;
+                explodeProgress[i] = std::max(0.f, std::min(1.f, explodeProgress[i]));
             }
 
-            // ── Legend ───────────────────────────────────────────────────
+            // ── Pass 2: draw slices ───────────────────────────────────────
+            {
+                float sa = -IM_PI * 0.5f;
+                for (int i = 0; i < 4; ++i)
+                {
+                    if (bins[i].count == 0) continue;
+                    float sweep = (bins[i].count / total) * IM_PI * 2.f;
+                    float ea = sa + sweep;
+                    float mid = sa + sweep * 0.5f;
+
+                    // Offset centre for explode effect
+                    ImVec2 c(
+                        baseCentre.x + cosf(mid) * explodeProgress[i] * kExplodeDist,
+                        baseCentre.y + sinf(mid) * explodeProgress[i] * kExplodeDist);
+
+                    bool isHovered = (i == hoveredSlice);
+                    ImU32 col = bins[i].color;
+
+                    // Brighten hovered slice slightly
+                    if (isHovered) {
+                        int r = std::min(255, (int)(((col >> 0) & 0xFF) * 1.15f));
+                        int g = std::min(255, (int)(((col >> 8) & 0xFF) * 1.15f));
+                        int b = std::min(255, (int)(((col >> 16) & 0xFF) * 1.15f));
+                        col = IM_COL32(r, g, b, 255);
+                    }
+
+                    // Filled wedge
+                    draw->PathLineTo(c);
+                    draw->PathArcTo(c, radius, sa, ea, 60);
+                    draw->PathFillConvex(col);
+
+                    // Crisp separator stroke (dark, thin)
+                    draw->PathLineTo(c);
+                    draw->PathArcTo(c, radius, sa, ea, 60);
+                    draw->PathStroke(IM_COL32(15, 18, 24, 220), false, isHovered ? 3.f : 1.5f);
+
+                    // Percentage label inside slice
+                    {
+                        float pct = 100.f * bins[i].count / total;
+                        char  buf[16];
+                        std::snprintf(buf, sizeof(buf), "%.0f%%", pct);
+                        ImVec2 lsz = ImGui::CalcTextSize(buf);
+                        float  lr = radius * 0.60f;
+                        ImVec2 lp(c.x + cosf(mid) * lr - lsz.x * 0.5f,
+                            c.y + sinf(mid) * lr - lsz.y * 0.5f);
+                        draw->AddText(lp, IM_COL32(255, 255, 255, 240), buf);
+                    }
+
+                    // Respondent count label (closer to rim)
+                    {
+                        char buf[8];
+                        std::snprintf(buf, sizeof(buf), "n=%d", bins[i].count);
+                        ImVec2 lsz = ImGui::CalcTextSize(buf);
+                        float  lr = radius * 0.82f;
+                        ImVec2 lp(c.x + cosf(mid) * lr - lsz.x * 0.5f,
+                            c.y + sinf(mid) * lr - lsz.y * 0.5f);
+                        draw->AddText(lp, IM_COL32(255, 255, 255, 170), buf);
+                    }
+
+                    sa = ea;
+                }
+            }
+
+            // Advance cursor
+            ImGui::Dummy(ImVec2(avail, (radius + kExplodeDist) * 2.f + 20.f));
+
+            // ── Tooltip ───────────────────────────────────────────────────
+            if (hoveredSlice >= 0 && bins[hoveredSlice].count > 0)
+            {
+                float pct = 100.f * bins[hoveredSlice].count / total;
+                float avg = bins[hoveredSlice].sum / bins[hoveredSlice].count;
+                ImGui::SetTooltip("%s\nn = %d  (%.1f%%)\nAvg score: %.2f",
+                    bins[hoveredSlice].label,
+                    bins[hoveredSlice].count, pct, avg);
+            }
+
+            // ── Legend ────────────────────────────────────────────────────
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.7f, 1.f), "LEGEND");
             ImGui::Spacing();
 
-            for (size_t i = 0; i < values.size(); ++i)
+            for (int i = 0; i < 4; ++i)
             {
-                if (values[i] <= 0.f) continue;
-                ImU32  u32 = kSliceColors[i % kNumColors];
+                ImU32  u32 = bins[i].color;
                 ImVec4 cf(((u32 >> 0) & 0xFF) / 255.f,
                     ((u32 >> 8) & 0xFF) / 255.f,
                     ((u32 >> 16) & 0xFF) / 255.f, 1.f);
 
-                // Colour swatch
                 ImVec2 swP = ImGui::GetCursorScreenPos();
                 swP.y += 3.f;
                 draw->AddRectFilled(swP, ImVec2(swP.x + 14.f, swP.y + 14.f), u32, 3.f);
                 ImGui::Dummy(ImVec2(14.f, 14.f));
                 ImGui::SameLine(0.f, 8.f);
 
-                const char* lbl = (i < labels.size()) ? labels[i].c_str() : "Group";
-                float pct = 100.f * values[i] / total;
-                ImGui::TextColored(cf, "%s  —  %.2f  (%.1f%%)", lbl, values[i], pct);
+                float pct = 100.f * bins[i].count / total;
+                ImGui::TextColored(cf, "%s   n=%d  (%.1f%%)",
+                    bins[i].label, bins[i].count, pct);
             }
         }
 
@@ -499,7 +574,7 @@ namespace Statix {
                 }
 
                 if (isH)
-                    ImGui::SetTooltip("Range: %.2f – %.2f\nCount: %.0f",
+                    ImGui::SetTooltip("Range: %.2f - %.2f\nCount: %.0f",
                         minV + i * (range / (float)bins),
                         minV + (i + 1) * (range / (float)bins),
                         hist[i]);

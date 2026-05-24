@@ -195,7 +195,7 @@ static int DrawBarChartImGui(ImDrawList* drawList,
         const float startY = plotY + plotH * 0.5f - chH * len * 0.5f;
         for (int ci = 0; ci < len; ++ci)
         {
-            char ch[2] = { ytitle[ci], ' ' };
+            char ch[2] = { ytitle[ci], '\0' };
             float chW = ImGui::CalcTextSize(ch).x;
             drawList->AddText(
                 ImVec2(origin.x + 2.f + (yTitleW - chW) * 0.5f, startY + ci * chH),
@@ -648,8 +648,8 @@ int main()
         const int sidebarPixelWidth =
             static_cast<int>(sidebarWidth * (static_cast<float>(fbW) / static_cast<float>(winW)));
         // -----------------------------------------------------------
-       // 8  TAB-specific UI
-       // -----------------------------------------------------------
+        // 8  TAB-specific UI
+        // -----------------------------------------------------------
 
         if (selectedTab == 0) // DASHBOARD
         {
@@ -667,7 +667,7 @@ int main()
                 // ── Title ────────────────────────────────────────────────
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
-                    "SURVEY DASHBOARD  —  %zu respondents", dataManager.RowCount());
+                    "SURVEY DASHBOARD - %zu respondents", dataManager.RowCount());
                 ImGui::Separator();
                 ImGui::Spacing();
 
@@ -692,7 +692,7 @@ int main()
                     ImGui::Text("Mean   : %.3f", mc.mean);
                     ImGui::Text("Std Dev: %.3f", mc.stddev);
                     ImGui::Text("Median : %.3f", mc.median);
-                    ImGui::Text("Range  : %.2f â %.2f", mc.minV, mc.maxV);
+                    ImGui::Text("Range  : %.2f - %.2f", mc.minV, mc.maxV);
 
                     ImGui::EndChild();
                     ImGui::PopStyleColor();
@@ -897,7 +897,7 @@ int main()
                     "r values across all five sub-scores (n = %zu)", dataManager.RowCount());
                 ImGui::Spacing();
 
-                
+               
                 // Correlation matrix reads entirely from corrCache — zero
                 // computation per frame.
                 const int nm = static_cast<int>(metricCache.size());
@@ -989,7 +989,7 @@ int main()
                     ImGui::Text("Formula : Y = %.4f * X  +  %.4f",
                         reg.slope, reg.intercept);
                     ImGui::Text("Pearson r: %.4f", r);
-                    ImGui::Text("R²       : %.4f", reg.rSquared);
+                    ImGui::Text("R^2      : %.4f", reg.rSquared);
 
                     // Verbal strength
                     float absR = std::fabs(r);
