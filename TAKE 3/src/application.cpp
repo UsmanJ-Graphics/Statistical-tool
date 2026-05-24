@@ -35,8 +35,8 @@
          API inside the unified ##full_chart_area child window.  The
          raw OpenGL clear + chartRenderer.draw() path is removed from
          the per-frame tail; the sidebar viewport split is kept only
-         */
-   //     for background clearing.
+         for background clearing.
+=====================================================================*/
 #include <windows.h>
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -331,6 +331,68 @@ int main()
     std::vector<std::string> metricNames = Statix::DataManager::GetMetricNames();
 
     // -----------------------------------------------------------------
+    // Cached analytics – computed once on load, never inside the render
+    // loop.  Recomputed by RebuildCache() whenever dataManager changes.
+    // -----------------------------------------------------------------
+    struct MetricCache {
+        std::string name;
+        std::vector<float> values;
+        float mean = 0.f, median = 0.f, variance = 0.f, stddev = 0.f;
+        float minV = 0.f, maxV = 0.f;
+    };
+    struct GenderCache {
+        int nMale = 0, nFemale = 0, nOther = 0;
+        float avgMale = 0.f, avgFemale = 0.f;
+    };
+    // Full 5x5 Pearson matrix [row][col]
+    struct CorrCache {
+        float r[5][5] = {};
+    };
+
+    std::vector<MetricCache> metricCache;
+    GenderCache              genderCache;
+    CorrCache                corrCache;
+
+    // Call this once after every successful LoadTable().
+    auto RebuildCache = [&]()
+        {
+            metricCache.clear();
+            for (const auto& mName : metricNames)
+            {
+                MetricCache mc;
+                mc.name = mName;
+                mc.values = dataManager.GetMetricColumn(mName);
+                if (!mc.values.empty())
+                {
+                    ComputeStats(mc.values, mc.mean, mc.median, mc.variance, mc.stddev);
+                    mc.minV = *std::min_element(mc.values.begin(), mc.values.end());
+                    mc.maxV = *std::max_element(mc.values.begin(), mc.values.end());
+                }
+                metricCache.push_back(std::move(mc));
+            }
+
+            // Gender breakdown
+            genderCache = {};
+            for (const auto& r : dataManager.GetRespondents())
+            {
+                std::string g = r.gender;
+                std::transform(g.begin(), g.end(), g.begin(), ::tolower);
+                if (g == "male") { ++genderCache.nMale;   genderCache.avgMale += r.TotalScore(); }
+                else if (g == "female") { ++genderCache.nFemale; genderCache.avgFemale += r.TotalScore(); }
+                else { ++genderCache.nOther; }
+            }
+            if (genderCache.nMale > 0) genderCache.avgMale /= genderCache.nMale;
+            if (genderCache.nFemale > 0) genderCache.avgFemale /= genderCache.nFemale;
+
+            // Pearson matrix
+            int nm = static_cast<int>(metricCache.size());
+            for (int row = 0; row < nm && row < 5; ++row)
+                for (int col = 0; col < nm && col < 5; ++col)
+                    corrCache.r[row][col] = (row == col) ? 1.f
+                    : PearsonCorrelation(metricCache[row].values, metricCache[col].values);
+        };
+
+    // -----------------------------------------------------------------
     // B-03 FIX: popup-open requests deferred to root ID-stack scope.
     // -----------------------------------------------------------------
     bool openPopup_FileLoadError = false;
@@ -394,6 +456,7 @@ int main()
                                 yMetricIdx = 1;
                                 selectedTab = 1;
                                 dataLoaded = true;   // B-05: assigned exactly once
+                                RebuildCache();
 
                                 std::cout << "[LoadDataset] Rows loaded: " << dataManager.RowCount()
                                     << ", metrics: " << metricNames.size() << std::endl;
@@ -472,6 +535,7 @@ int main()
             if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
+
         // -----------------------------------------------------------
         // 6  No-data splash / paste panel
         // -----------------------------------------------------------
@@ -548,6 +612,7 @@ int main()
                             yMetricIdx = 1;
                             selectedTab = 1;
                             dataLoaded = true;
+                            RebuildCache();
 
                             std::cout << "[ParsePasted] Rows loaded: " << dataManager.RowCount()
                                 << ", metrics: " << metricNames.size() << std::endl;
@@ -583,8 +648,8 @@ int main()
         const int sidebarPixelWidth =
             static_cast<int>(sidebarWidth * (static_cast<float>(fbW) / static_cast<float>(winW)));
         // -----------------------------------------------------------
-                // 8  TAB-specific UI
-                // -----------------------------------------------------------
+       // 8  TAB-specific UI
+       // -----------------------------------------------------------
 
         if (selectedTab == 0) // DASHBOARD
         {
@@ -606,78 +671,60 @@ int main()
                 ImGui::Separator();
                 ImGui::Spacing();
 
-                // ── Per-metric summary cards ─────────────────────────────
-                // Each card: metric name, mean, std dev, min, max in a
-                // bordered child region so they look like tiles.
+                // ── Per-metric summary cards (read from cache, no computation) ──
                 const float cardW = 230.f;
                 const float cardH = 110.f;
                 const float padX = 12.f;
-                bool firstCard = true;
+                int cardCol = 0;
 
-                for (const auto& mName : metricNames)
+                for (const auto& mc : metricCache)
                 {
-                    std::vector<float> col = dataManager.GetMetricColumn(mName);
-                    if (col.empty()) continue;
+                    if (mc.values.empty()) continue;
 
-                    float mean, median, variance, stddev;
-                    ComputeStats(col, mean, median, variance, stddev);
-                    float minV = *std::min_element(col.begin(), col.end());
-                    float maxV = *std::max_element(col.begin(), col.end());
-
-                    if (!firstCard) ImGui::SameLine(0.f, padX);
-                    firstCard = false;
+                    if (cardCol > 0) ImGui::SameLine(0.f, padX);
 
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.13f, 0.15f, 0.19f, 1.f));
-                    ImGui::BeginChild(mName.c_str(), ImVec2(cardW, cardH), true);
+                    // Use a stable ID — metric name is unique and never changes mid-frame
+                    ImGui::BeginChild(mc.name.c_str(), ImVec2(cardW, cardH), true);
 
-                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "%s", mName.c_str());
+                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "%s", mc.name.c_str());
                     ImGui::Separator();
-                    ImGui::Text("Mean   : %.3f", mean);
-                    ImGui::Text("Std Dev: %.3f", stddev);
-                    ImGui::Text("Median : %.3f", median);
-                    ImGui::Text("Range  : %.2f – %.2f", minV, maxV);
+                    ImGui::Text("Mean   : %.3f", mc.mean);
+                    ImGui::Text("Std Dev: %.3f", mc.stddev);
+                    ImGui::Text("Median : %.3f", mc.median);
+                    ImGui::Text("Range  : %.2f â %.2f", mc.minV, mc.maxV);
 
                     ImGui::EndChild();
                     ImGui::PopStyleColor();
 
-                    // Wrap to next row after every 4 cards
-                    static int cardCount = 0;
-                    ++cardCount;
-                    if (cardCount % 4 == 0) firstCard = true;
+                    // Wrap after every 4 cards
+                    ++cardCol;
+                    if (cardCol >= 4) { cardCol = 0; }
                 }
 
                 ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::Spacing();
 
-                // ── Gender breakdown ─────────────────────────────────────
+                // ── Gender breakdown (read from cache) ───────────────────
                 ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "GENDER BREAKDOWN");
                 ImGui::Spacing();
 
-                int nMale = 0, nFemale = 0, nOther = 0;
-                float totalMale = 0.f, totalFemale = 0.f;
-                for (const auto& r : dataManager.GetRespondents())
-                {
-                    std::string g = r.gender;
-                    std::transform(g.begin(), g.end(), g.begin(), ::tolower);
-                    if (g == "male") { ++nMale;   totalMale += r.TotalScore(); }
-                    else if (g == "female") { ++nFemale; totalFemale += r.TotalScore(); }
-                    else { ++nOther; }
-                }
-
                 ImGui::Columns(3, "##gender_cols", true);
                 ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.f, 1.f), "Male");
-                ImGui::Text("n = %d", nMale);
-                if (nMale > 0) ImGui::Text("Avg Total: %.3f", totalMale / nMale);
+                ImGui::Text("n = %d", genderCache.nMale);
+                if (genderCache.nMale > 0)
+                    ImGui::Text("Avg Total: %.3f", genderCache.avgMale);
                 ImGui::NextColumn();
 
                 ImGui::TextColored(ImVec4(1.f, 0.6f, 0.8f, 1.f), "Female");
-                ImGui::Text("n = %d", nFemale);
-                if (nFemale > 0) ImGui::Text("Avg Total: %.3f", totalFemale / nFemale);
+                ImGui::Text("n = %d", genderCache.nFemale);
+                if (genderCache.nFemale > 0)
+                    ImGui::Text("Avg Total: %.3f", genderCache.avgFemale);
                 ImGui::NextColumn();
 
                 ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.f), "Other / N/A");
-                ImGui::Text("n = %d", nOther);
+                ImGui::Text("n = %d", genderCache.nOther);
                 ImGui::Columns(1);
 
                 ImGui::Spacing();
@@ -754,8 +801,10 @@ int main()
                 ImGui::Separator();
                 ImGui::Spacing();
 
-                const auto activeVals =
-                    dataManager.GetMetricColumn(metricNames[metricComboIdx]);
+                // Read from pre-built cache — no allocation per frame.
+                if (metricComboIdx >= static_cast<int>(metricCache.size()))
+                    metricComboIdx = 0;
+                const auto& activeVals = metricCache[metricComboIdx].values;
 
                 // ---- chart body ----
                 switch (Statix::UI::g_chartType)
@@ -796,11 +845,11 @@ int main()
 
                 case 2: // Scatter Plot
                 {
-                    if (xMetricIdx >= static_cast<int>(metricNames.size())) xMetricIdx = 0;
-                    if (yMetricIdx >= static_cast<int>(metricNames.size())) yMetricIdx = 0;
-                    const auto X = dataManager.GetMetricColumn(metricNames[xMetricIdx]);
-                    const auto Y = dataManager.GetMetricColumn(metricNames[yMetricIdx]);
-                    Statix::UI::render_scatter_plot(X, Y);
+                    if (xMetricIdx >= static_cast<int>(metricCache.size())) xMetricIdx = 0;
+                    if (yMetricIdx >= static_cast<int>(metricCache.size())) yMetricIdx = 0;
+                    Statix::UI::render_scatter_plot(
+                        metricCache[xMetricIdx].values,
+                        metricCache[yMetricIdx].values);
                     break;
                 }
 
@@ -848,16 +897,17 @@ int main()
                     "r values across all five sub-scores (n = %zu)", dataManager.RowCount());
                 ImGui::Spacing();
 
-                const int nm = static_cast<int>(metricNames.size());
-
+                
+                // Correlation matrix reads entirely from corrCache — zero
+                // computation per frame.
+                const int nm = static_cast<int>(metricCache.size());
                 if (ImGui::BeginTable("##corr_matrix", nm + 1,
                     ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                     ImGuiTableFlags_SizingFixedFit))
                 {
-                    // Header row
                     ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 130.f);
-                    for (const auto& n : metricNames)
-                        ImGui::TableSetupColumn(n.c_str(),
+                    for (const auto& mc : metricCache)
+                        ImGui::TableSetupColumn(mc.name.c_str(),
                             ImGuiTableColumnFlags_WidthFixed, 100.f);
                     ImGui::TableHeadersRow();
 
@@ -866,32 +916,22 @@ int main()
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
-                            "%s", metricNames[row].c_str());
-
-                        std::vector<float> rowVec =
-                            dataManager.GetMetricColumn(metricNames[row]);
+                            "%s", metricCache[row].name.c_str());
 
                         for (int col = 0; col < nm; ++col)
                         {
                             ImGui::TableSetColumnIndex(col + 1);
-                            if (row == col)
-                            {
+                            float r = corrCache.r[row][col];
+                            if (row == col) {
                                 ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.f), "1.000");
                             }
-                            else
-                            {
-                                std::vector<float> colVec =
-                                    dataManager.GetMetricColumn(metricNames[col]);
-                                float r = PearsonCorrelation(rowVec, colVec);
-
-                                // Colour-code: strong positive=green, negative=red
+                            else {
                                 ImVec4 rCol;
                                 if (r > 0.5f) rCol = ImVec4(0.2f, 0.9f, 0.4f, 1.f);
                                 else if (r > 0.2f) rCol = ImVec4(0.6f, 0.9f, 0.4f, 1.f);
                                 else if (r < -0.5f) rCol = ImVec4(1.0f, 0.3f, 0.3f, 1.f);
                                 else if (r < -0.2f) rCol = ImVec4(1.0f, 0.6f, 0.3f, 1.f);
                                 else                rCol = ImVec4(0.8f, 0.8f, 0.8f, 1.f);
-
                                 ImGui::TextColored(rCol, "%.3f", r);
                             }
                         }
@@ -928,10 +968,9 @@ int main()
 
                 if (xMetricIdx != yMetricIdx)
                 {
-                    std::vector<float> X =
-                        dataManager.GetMetricColumn(metricNames[xMetricIdx]);
-                    std::vector<float> Y =
-                        dataManager.GetMetricColumn(metricNames[yMetricIdx]);
+                    // Cache lookup — no allocation per frame.
+                    const std::vector<float>& X = metricCache[xMetricIdx].values;
+                    const std::vector<float>& Y = metricCache[yMetricIdx].values;
 
                     auto reg = LinearFit(X, Y);
                     float r = PearsonCorrelation(X, Y);
@@ -1052,27 +1091,20 @@ int main()
                     ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, 60.f);
                     ImGui::TableHeadersRow();
 
-                    for (const auto& mName : metricNames)
+                    // Read from cache — no computation per frame
+                    for (const auto& mc : metricCache)
                     {
-                        std::vector<float> col =
-                            dataManager.GetMetricColumn(mName);
-                        if (col.empty()) continue;
-
-                        float mean, median, variance, stddev;
-                        ComputeStats(col, mean, median, variance, stddev);
-                        float minV = *std::min_element(col.begin(), col.end());
-                        float maxV = *std::max_element(col.begin(), col.end());
-
+                        if (mc.values.empty()) continue;
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
                         ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
-                            "%s", mName.c_str());
-                        ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", mean);
-                        ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", median);
-                        ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", stddev);
-                        ImGui::TableSetColumnIndex(4); ImGui::Text("%.3f", variance);
-                        ImGui::TableSetColumnIndex(5); ImGui::Text("%.2f", minV);
-                        ImGui::TableSetColumnIndex(6); ImGui::Text("%.2f", maxV);
+                            "%s", mc.name.c_str());
+                        ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", mc.mean);
+                        ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", mc.median);
+                        ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", mc.stddev);
+                        ImGui::TableSetColumnIndex(4); ImGui::Text("%.3f", mc.variance);
+                        ImGui::TableSetColumnIndex(5); ImGui::Text("%.2f", mc.minV);
+                        ImGui::TableSetColumnIndex(6); ImGui::Text("%.2f", mc.maxV);
                     }
                     ImGui::EndTable();
                 }
