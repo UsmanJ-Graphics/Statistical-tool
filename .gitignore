@@ -1,0 +1,16 @@
+# Visual Studio cache
+.vs/
+
+# Build outputs
+x64/
+Debug/
+Release/
+bin/
+obj/
+
+# IntelliSense / indexes
+*.vsidx
+
+# User-specific files
+*.user
+*.suo

@@ -1,0 +1,31 @@
+#,Gender,Age,Education,Hours,Platform,Content,Q7,Q8,Q9,Q10,Q11,Q12,Q13,Q14,Q15,Q16,Q17r,Q18,Q19,Q20,Q21
+1,Male,19-22,Undergraduate,3-5 hours,WhatsApp,Educational,4,4,4,4,4,2,4,4,5,4,1,5,4,4,5
+2,Male,19-22,Undergraduate,3-5 hours,Instagram,Entertainment,4,3,3,4,3,4,2,5,3,3,2,4,2,4,3
+3,Male,19-22,Undergraduate,1-3 hours,Instagram,Educational,1,3,4,4,5,3,4,4,4,5,2,5,3,2,4
+4,Male,19-22,Intermediate,3-5 hours,Instagram,Entertainment,5,5,5,5,5,4,4,4,4,3,4,5,4,4,4
+5,Female,19-22,Undergraduate,More than 5 hours,Instagram,Entertainment,4,3,5,5,4,5,3,5,2,5,3,5,4,3,5
+6,Male,15-18,Undergraduate,Less than 1 hour,Twitter/X,Debates,5,5,5,5,5,5,5,5,5,5,1,5,5,5,5
+7,Male,19-22,Undergraduate,3-5 hours,Instagram,Debates,5,5,5,5,4,4,5,5,5,5,3,5,4,5,5
+8,Female,19-22,Undergraduate,More than 5 hours,Instagram,Entertainment,1,5,5,5,5,1,5,5,5,5,1,4,4,2,5
+9,Female,19-22,Undergraduate,1-3 hours,YouTube,Educational,3,4,4,3,3,3,2,4,4,5,1,5,3,3,5
+10,Female,19-22,Undergraduate,3-5 hours,Instagram,Entertainment,3,4,3,3,5,3,3,4,3,3,1,5,5,5,5
+11,Male,19-22,Undergraduate,1-3 hours,Instagram,News,2,2,3,3,3,3,3,4,3,4,3,4,3,4,4
+12,Female,19-22,Undergraduate,More than 5 hours,Instagram,Entertainment,4,5,5,4,4,3,2,4,4,4,3,4,4,4,2
+13,Male,19-22,Undergraduate,3-5 hours,Instagram,Educational,4,4,4,4,3,3,4,5,4,4,3,4,2,3,4
+14,Male,19-22,Undergraduate,More than 5 hours,Instagram,Entertainment,3,5,5,4,5,3,3,5,3,4,3,5,3,5,4
+15,Male,19-22,Undergraduate,3-5 hours,Instagram,Entertainment,4,5,5,3,5,3,4,5,3,5,2,2,3,4,4
+16,Female,19-22,Undergraduate,3-5 hours,Instagram,Educational,4,4,4,3,4,3,4,4,4,5,1,5,1,2,2
+17,Male,19-22,Undergraduate,1-3 hours,Instagram,Educational,4,4,5,4,4,3,4,4,4,4,3,4,5,3,5
+18,Male,19-22,Undergraduate,More than 5 hours,TikTok,Entertainment,4,3,2,5,3,2,3,3,2,3,2,3,3,5,3
+19,Female,19-22,Undergraduate,1-3 hours,Instagram,Entertainment,2,4,4,3,3,2,5,5,5,4,1,4,4,2,1
+20,Male,19-22,Undergraduate,3-5 hours,Instagram,News,3,3,4,4,4,4,4,5,5,5,2,5,3,3,4
+21,Male,19-22,Undergraduate,3-5 hours,Instagram,Educational,1,3,3,4,3,3,2,4,4,4,3,4,4,4,4
+22,Male,19-22,Undergraduate,1-3 hours,Instagram,Entertainment,3,4,5,4,3,3,4,5,3,5,2,4,3,3,3
+23,Female,19-22,Undergraduate,More than 5 hours,Instagram,Educational,3,3,3,2,3,3,3,3,3,3,3,2,2,3,3
+24,Male,19-22,Undergraduate,1-3 hours,Instagram,Educational,3,3,4,3,1,3,5,4,4,4,2,4,1,1,4
+25,Female,19-22,Undergraduate,3-5 hours,Instagram,Entertainment,1,5,5,2,5,3,5,5,5,5,1,5,1,1,5
+26,Female,19-22,Undergraduate,Less than 1 hour,WhatsApp,News,1,2,2,2,3,3,3,3,3,3,3,3,3,3,3
+27,Female,19-22,Undergraduate,3-5 hours,Instagram,Debates,1,1,2,1,1,1,1,1,1,1,5,1,1,1,1
+28,Female,19-22,Undergraduate,1-3 hours,TikTok,Entertainment,3,4,4,3,4,3,4,4,4,5,2,5,3,3,4
+29,Female,19-22,Undergraduate,More than 5 hours,Instagram,Debates,4,5,5,4,5,4,5,5,5,5,2,5,4,3,5
+30,Male,19-22,Undergraduate,3-5 hours,YouTube,News,3,4,4,3,3,3,4,4,4,4,3,4,3,4,4
