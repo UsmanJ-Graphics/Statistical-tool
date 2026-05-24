@@ -11,7 +11,7 @@
 namespace Statix {
 
     /*-------------------------------------------------------------
-       LoadTable – converts the generic *Table* into a vector of
+       LoadTable – converts the generic Table into a vector of
        SurveyRespondent objects, validates data, and computes scores.
     -------------------------------------------------------------*/
     bool DataManager::LoadTable(const Table& raw, std::string& outError)
@@ -23,54 +23,30 @@ namespace Statix {
             return false;
         }
 
-        // Expected column names (must match the CSV / XLSX header exactly)
-        const std::vector<std::string> required = {
-            "Timestamp", "Gender", "AgeGroup", "Education", "Hours",
-            "Platform", "ContentPref",
-            // Q7 … Q21 (15 numeric columns)
-            "Q7","Q8","Q9","Q10","Q11","Q12","Q13","Q14","Q15",
-            "Q16","Q17","Q18","Q19","Q20","Q21"
-        };
-
-        // Verify that every required column exists in the first row (header)
+        // Build a case-insensitive header map from the first row.
         const Row& headerCheck = raw.front();
-        // Build a map from normalized header names to actual column keys
         std::unordered_map<std::string, std::string> headerMap;
         for (const auto& [colName, _] : headerCheck) {
             std::string norm = colName;
-            // trim whitespace
             norm.erase(0, norm.find_first_not_of(" \t\n\r"));
-            norm.erase(norm.find_last_not_of(" \t\n\r") + 1);
-            // to lower case
+            auto lastNonSpace = norm.find_last_not_of(" \t\n\r");
+            if (lastNonSpace != std::string::npos) norm.erase(lastNonSpace + 1);
             std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
             headerMap[norm] = colName;
         }
 
-        // Debug: list detected column keys (normalized)
         std::cout << "[LoadDataset] Detected columns:";
-        for (const auto& kv : headerMap) {
+        for (const auto& kv : headerMap)
             std::cout << " '" << kv.first << "'";
-        }
         std::cout << "\n";
 
-        // Helper to find column key case-insensitively
-        auto findKey = [&](const std::string& req) -> std::optional<std::string> {
-            std::string norm = req;
-            norm.erase(0, norm.find_first_not_of(" \t\n\r"));
-            norm.erase(norm.find_last_not_of(" \t\n\r") + 1);
-            std::transform(norm.begin(), norm.end(), norm.begin(), ::tolower);
-            auto it = headerMap.find(norm);
-            if (it != headerMap.end()) return it->second;
-            return std::nullopt;
-            };
-
-        // Iterate over each raw row, map fields, compute scores.
+        // Iterate over each data row (skip header at index 0).
         size_t rowIdx = 0;
-        for (size_t i = 1; i < raw.size(); ++i) {   // skip header
+        for (size_t i = 1; i < raw.size(); ++i) {
             const auto& rawRow = raw[i];
             ++rowIdx;
 
-            // Map header names to row indices for case-insensitive access
+            // Build a case-insensitive value map for this row.
             std::unordered_map<std::string, std::string> rowMap;
             for (const auto& [colName, val] : rawRow) {
                 std::string norm = colName;
@@ -78,7 +54,6 @@ namespace Statix {
                 rowMap[norm] = val;
             }
 
-            // Helper to trim whitespace from both ends
             auto trim = [](std::string s) -> std::string {
                 size_t start = s.find_first_not_of(" \t\n\r");
                 size_t end = s.find_last_not_of(" \t\n\r");
@@ -94,41 +69,58 @@ namespace Statix {
                 };
 
             SurveyRespondent rec;
-            rec.timestamp = Normalise(getField("Timestamp"));
+
+            // B-WARN-4 FIX: CSV has no Timestamp column — store respondent number
+            // so the Raw Matrix tab shows something meaningful instead of blanks.
+            rec.timestamp = "R" + std::to_string(rowIdx);
+
             rec.gender = Normalise(getField("Gender"));
-            rec.ageGroup = Normalise(getField("AgeGroup"));
             rec.education = Normalise(getField("Education"));
             rec.hours = Normalise(getField("Hours"));
             rec.platform = Normalise(getField("Platform"));
-            rec.contentPref = Normalise(getField("ContentPref"));
 
-            // ----- Likert responses ----------------------------------------
-            std::array<int, 15> likert{};
+            // B-WARN-3 FIX: CSV headers are "Age" and "Content", not
+            // "AgeGroup" and "ContentPref".
+            rec.ageGroup = Normalise(getField("Age"));
+            rec.contentPref = Normalise(getField("Content"));
+
+            // ----- Likert responses (Q7–Q21) --------------------------------
+            // B-CRIT-1 FIX: index 10 (zero-based) maps to Q17r, not Q17.
+            // The column name array now matches the actual CSV headers exactly.
+            static const std::array<const char*, 15> kLikertCols = {
+                "Q7",  "Q8",  "Q9",  "Q10",
+                "Q11", "Q12", "Q13", "Q14",
+                "Q15", "Q16",
+                "Q17r",   // <-- was "Q17"; CSV column is "Q17r" (reverse-coded)
+                "Q18",
+                "Q19", "Q20", "Q21"
+            };
+
             std::vector<std::string> likertTokens;
             likertTokens.reserve(15);
-            for (int i = 0; i < 15; ++i) {
-                std::string col = "Q" + std::to_string(7 + i);
+            for (const char* col : kLikertCols)
                 likertTokens.emplace_back(getField(col));
-            }
 
-            // Debug: show the raw Likert tokens for this row
             std::cout << "[LoadDataset] Row " << rowIdx << " Likert tokens: ";
             for (const auto& t : likertTokens) std::cout << "'" << t << "' ";
             std::cout << "\n";
 
+            std::array<int, 15> likert{};
             if (!ParseLikert(likertTokens, 0, likert)) {
-                std::cout << "[LoadDataset] Skipping row " << rowIdx << " due to invalid Likert values.\n";
+                std::cout << "[LoadDataset] Skipping row " << rowIdx
+                    << " due to invalid Likert values.\n";
                 continue;
             }
             rec.responses = likert;
 
-            // ----- Qualitative text (optional) -----------------------------
-            auto it1 = rawRow.find(findKey("Qualitative1").value_or("Qualitative1"));
-            auto it2 = rawRow.find(findKey("Qualitative2").value_or("Qualitative2"));
+            // ----- Qualitative text (optional) ------------------------------
+            auto it1 = rawRow.find("Qualitative1");
+            auto it2 = rawRow.find("Qualitative2");
             if (it1 != rawRow.end()) rec.qualitative1 = it1->second;
             if (it2 != rawRow.end()) rec.qualitative2 = it2->second;
 
             // ----- Compute derived scores -----------------------------------
+            // ComputeAnalytics() applies the Q17r reversal before scoring.
             rec.ComputeAnalytics();
             PrintRespondent(rec);
 
@@ -136,15 +128,14 @@ namespace Statix {
         }
 
         if (respondents_.empty()) {
-            outError = "No valid rows were parsed – all rows may have been malformed.";
+            outError = "No valid rows were parsed – check that Q7–Q21 and Q17r columns exist.";
             return false;
         }
         return true;
     }
 
     /*-------------------------------------------------------------
-       Simple normalisation – replace UTF‑8 en‑dash with ordinary hyphen,
-       trim surrounding whitespace.
+       Normalise – replace UTF-8 en-dash, trim whitespace.
     -------------------------------------------------------------*/
     std::string DataManager::Normalise(const std::string& s)
     {
@@ -155,18 +146,15 @@ namespace Statix {
             out.replace(pos, enDash.length(), "-");
             ++pos;
         }
-        // Trim left
         while (!out.empty() && std::isspace(static_cast<unsigned char>(out.front())))
             out.erase(out.begin());
-        // Trim right
         while (!out.empty() && std::isspace(static_cast<unsigned char>(out.back())))
             out.pop_back();
         return out;
     }
 
     /*-------------------------------------------------------------
-       Parse 15 consecutive integer tokens (must be 1‑5).
-       B-16 FIX: Made stricter while keeping robustness.
+       ParseLikert – parse 15 consecutive tokens, must be 1-5.
     -------------------------------------------------------------*/
     bool DataManager::ParseLikert(const std::vector<std::string>& tokens,
         size_t startIdx,
@@ -177,7 +165,6 @@ namespace Statix {
         for (size_t i = 0; i < 15; ++i) {
             std::string t = tokens[startIdx + i];
 
-            // Trim whitespace
             size_t first = t.find_first_not_of(" \t\n\r");
             size_t last = t.find_last_not_of(" \t\n\r");
             if (first == std::string::npos) {
@@ -186,7 +173,6 @@ namespace Statix {
             }
             t = t.substr(first, last - first + 1);
 
-            // Strict: must be 1-5 after cleaning
             try {
                 int val = std::stoi(t);
                 if (val >= 1 && val <= 5) {
@@ -196,53 +182,49 @@ namespace Statix {
             }
             catch (...) {}
 
-            // Text fallback (still supported but stricter)
+            // Text fallback
             std::string norm = Normalise(t);
             if (norm.find("strong agree") != std::string::npos) out[i] = 5;
             else if (norm.find("agree") != std::string::npos) out[i] = 4;
             else if (norm.find("neutral") != std::string::npos) out[i] = 3;
             else if (norm.find("disagree") != std::string::npos) out[i] = 2;
             else if (norm.find("strong disagree") != std::string::npos) out[i] = 1;
-            else {
-                out[i] = 0;        // invalid → 0
-            }
+            else out[i] = 0;
         }
         return true;
     }
 
     /*-------------------------------------------------------------
-       Return a vector of floats for a computed metric.
+       GetMetricColumn
     -------------------------------------------------------------*/
     std::vector<float> DataManager::GetMetricColumn(const std::string& metric) const
     {
         std::vector<float> out;
         out.reserve(respondents_.size());
-
         for (const auto& r : respondents_) {
-            if (metric == "Exposure Score")          out.push_back(r.ExposureScore());
-            else if (metric == "Normalization Score") out.push_back(r.NormalizationScore());
-            else if (metric == "Platform Attitude")   out.push_back(r.PlatformAttitude());
-            else if (metric == "RealWorld Score")    out.push_back(r.RealWorldScore());
-            else if (metric == "Total Score")        out.push_back(r.TotalScore());
-            else                                    out.push_back(0.0f);
+            if (metric == "Exposure Score")       out.push_back(r.ExposureScore());
+            else if (metric == "Normalization Score")  out.push_back(r.NormalizationScore());
+            else if (metric == "Platform Attitude")    out.push_back(r.PlatformAttitude());
+            else if (metric == "RealWorld Score")      out.push_back(r.RealWorldScore());
+            else if (metric == "Total Score")          out.push_back(r.TotalScore());
+            else                                       out.push_back(0.0f);
         }
         return out;
     }
 
-    /*-------------------------------------------------------------
-       Remove all stored respondents.
-    -------------------------------------------------------------*/
-    void DataManager::Clear()
-    {
-        respondents_.clear();
-    }
+    void DataManager::Clear() { respondents_.clear(); }
 
-    // B-24: Added for application.cpp compatibility
+    // B-24: Returns the raw CSV column names used when writing pasted data.
     std::vector<std::string> DataManager::GetColumnNames()
     {
-        // Return the original column names from last load if you want full fidelity.
-        // For now returning metric names is safe and matches UI expectations.
-        return GetMetricNames();
+        return {
+            "Timestamp", "Gender", "Age", "Education", "Hours",
+            "Platform", "Content",
+            "Q7","Q8","Q9","Q10",
+            "Q11","Q12","Q13","Q14",
+            "Q15","Q16","Q17r","Q18",
+            "Q19","Q20","Q21"
+        };
     }
-    
+
 } // namespace Statix

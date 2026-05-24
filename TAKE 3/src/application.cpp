@@ -35,8 +35,8 @@
          API inside the unified ##full_chart_area child window.  The
          raw OpenGL clear + chartRenderer.draw() path is removed from
          the per-frame tail; the sidebar viewport split is kept only
-         for background clearing.
-=====================================================================*/
+         */
+   //     for background clearing.
 #include <windows.h>
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -126,23 +126,12 @@ static Statix::Stats::RegressionResult LinearFit(const std::vector<float>& X,
 }
 
 /*-----------------------------------------------------------------
-   Draw a bar chart entirely through ImGui's DrawList and hit-test
-   the mouse in the exact same pixel coordinate space used to draw.
-
-   Returns the index of the bar currently under the mouse, or -1.
-   The progress vector from HoverDetector is used to lerp bar colour
-   for smooth fade-in/out — same visual as the original OpenGL path.
-
-   Parameters
-   ----------
-   drawList   – ImGui draw list (GetWindowDrawList)
-   origin     – top-left of the drawing area in screen space
-   size       – width × height of the drawing area
-   values     – metric values (one bar per element)
-   progress   – per-bar hover progress [0..1] from HoverDetector
-   mousePos   – current mouse position in screen space (ImGui coords)
-   colorBase  – RGBA [0-1] for fully-idle bars
-   colorHL    – RGBA [0-1] for fully-hovered bars
+   Fully self-contained bar chart via ImGui DrawList.
+   Draws: title, Y-axis title (vertical chars), Y-axis ticks +
+   gridlines, X-axis labels ("S1"…), value labels above bars.
+   Hit-tests in the exact same pixel rects used for drawing so
+   hover is always accurate.
+   Returns hovered bar index, or -1.
 -----------------------------------------------------------------*/
 static int DrawBarChartImGui(ImDrawList* drawList,
     ImVec2                    origin,
@@ -151,7 +140,8 @@ static int DrawBarChartImGui(ImDrawList* drawList,
     const std::vector<float>& progress,
     ImVec2                    mousePos,
     const float               colorBase[4],
-    const float               colorHL[4])
+    const float               colorHL[4],
+    const std::string& columnName = "")
 {
     if (values.empty() || size.x <= 0.f || size.y <= 0.f)
         return -1;
@@ -160,12 +150,26 @@ static int DrawBarChartImGui(ImDrawList* drawList,
     const float maxVal = *std::max_element(values.begin(), values.end());
     if (maxVal <= 0.f) return -1;
 
-    const float labelH = 18.f;
-    const float chartH = size.y - labelH;
-    const float barW = size.x / static_cast<float>(n);
-    const float pad = barW * 0.12f;
+    // ── Layout margins ───────────────────────────────────────────
+    const float titleH = 26.f;   // top: chart title
+    const float xLabelH = 20.f;   // bottom: S1…Sn labels
+    const float yTitleW = 14.f;   // far-left: vertical "Value" title
+    const float yLabelW = 52.f;   // left: numeric tick labels
 
-    // Lerp between base and highlight colour using per-bar progress.
+    const float plotX = origin.x + yTitleW + yLabelW;
+    const float plotY = origin.y + titleH;
+    const float plotW = size.x - yTitleW - yLabelW;
+    const float plotH = size.y - titleH - xLabelH;
+
+    if (plotW <= 0.f || plotH <= 0.f) return -1;
+
+    // ── Palette ──────────────────────────────────────────────────
+    const ImU32 colAxis = IM_COL32(130, 150, 170, 200);
+    const ImU32 colTick = IM_COL32(200, 210, 220, 200);
+    const ImU32 colGrid = IM_COL32(255, 255, 255, 18);
+    const ImU32 colVal = IM_COL32(220, 230, 240, 255);
+    const ImU32 colTitle = IM_COL32(220, 230, 240, 255);
+
     auto lerpColor = [](const float a[4], const float b[4], float t) -> ImU32 {
         return IM_COL32(
             static_cast<int>((a[0] + (b[0] - a[0]) * t) * 255.f),
@@ -173,39 +177,101 @@ static int DrawBarChartImGui(ImDrawList* drawList,
             static_cast<int>((a[2] + (b[2] - a[2]) * t) * 255.f),
             static_cast<int>((a[3] + (b[3] - a[3]) * t) * 255.f));
         };
-    const ImU32 colText = IM_COL32(220, 220, 220, 255);
 
+    // ── Chart title ──────────────────────────────────────────────
+    if (!columnName.empty())
+    {
+        ImVec2 tsz = ImGui::CalcTextSize(columnName.c_str());
+        drawList->AddText(
+            ImVec2(plotX + plotW * 0.5f - tsz.x * 0.5f, origin.y + 4.f),
+            colTitle, columnName.c_str());
+    }
+
+    // ── Y-axis title: "Value" printed vertically char-by-char ────
+    {
+        const char* ytitle = "Value";
+        const float chH = ImGui::GetTextLineHeight();
+        const int   len = static_cast<int>(std::strlen(ytitle));
+        const float startY = plotY + plotH * 0.5f - chH * len * 0.5f;
+        for (int ci = 0; ci < len; ++ci)
+        {
+            char ch[2] = { ytitle[ci], ' ' };
+            float chW = ImGui::CalcTextSize(ch).x;
+            drawList->AddText(
+                ImVec2(origin.x + 2.f + (yTitleW - chW) * 0.5f, startY + ci * chH),
+                colTick, ch);
+        }
+    }
+
+    // ── Y ticks + grid lines ─────────────────────────────────────
+    const int kTicks = 5;
+    for (int i = 0; i <= kTicks; ++i)
+    {
+        const float t = static_cast<float>(i) / kTicks;
+        const float yPx = plotY + plotH - t * plotH;
+        const float tickVal = t * maxVal;
+
+        drawList->AddLine(ImVec2(plotX, yPx),
+            ImVec2(plotX + plotW, yPx), colGrid, 1.f);
+        drawList->AddLine(ImVec2(plotX - 5.f, yPx),
+            ImVec2(plotX, yPx), colAxis, 1.5f);
+
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), "%.1f", tickVal);
+        ImVec2 tsz = ImGui::CalcTextSize(buf);
+        drawList->AddText(
+            ImVec2(plotX - 8.f - tsz.x, yPx - tsz.y * 0.5f),
+            colTick, buf);
+    }
+
+    // ── Axis lines ───────────────────────────────────────────────
+    drawList->AddLine(ImVec2(plotX, plotY),
+        ImVec2(plotX, plotY + plotH), colAxis, 2.f);
+    drawList->AddLine(ImVec2(plotX, plotY + plotH),
+        ImVec2(plotX + plotW, plotY + plotH), colAxis, 2.f);
+
+    // ── Bars, value labels, X-axis labels ────────────────────────
+    const float barSlot = plotW / static_cast<float>(n);
+    const float pad = barSlot * 0.12f;
     int hovered = -1;
 
     for (int i = 0; i < n; ++i)
     {
         const float norm = values[i] / maxVal;
-        const float barHeight = norm * chartH;
+        const float barHeight = norm * plotH;
 
-        const float x0 = origin.x + i * barW + pad;
-        const float x1 = origin.x + (i + 1) * barW - pad;
-        const float y0 = origin.y + chartH - barHeight;
-        const float y1 = origin.y + chartH;
+        const float x0 = plotX + i * barSlot + pad;
+        const float x1 = plotX + (i + 1) * barSlot - pad;
+        const float y0 = plotY + plotH - barHeight;
+        const float y1 = plotY + plotH;
 
-        // Hit-test: same rects used for drawing, so they always match.
         if (mousePos.x >= x0 && mousePos.x <= x1 &&
             mousePos.y >= y0 && mousePos.y <= y1)
-        {
             hovered = i;
-        }
 
-        const float t = (i < static_cast<int>(progress.size())) ? progress[i] : 0.f;
-        const ImU32 col = lerpColor(colorBase, colorHL, t);
-        drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), col, 3.f);
+        const float hp = (i < static_cast<int>(progress.size())) ? progress[i] : 0.f;
+        drawList->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1),
+            lerpColor(colorBase, colorHL, hp), 3.f);
 
-        if (barW > 24.f)
+        // Value label above bar
         {
             char buf[16];
             std::snprintf(buf, sizeof(buf), "%.1f", values[i]);
-            const ImVec2 tp(x0 + (x1 - x0) * 0.5f - ImGui::CalcTextSize(buf).x * 0.5f,
-                y0 - 14.f);
-            if (tp.y > origin.y)
-                drawList->AddText(tp, colText, buf);
+            ImVec2 tsz = ImGui::CalcTextSize(buf);
+            const float tx = x0 + (x1 - x0) * 0.5f - tsz.x * 0.5f;
+            const float ty = y0 - tsz.y - 2.f;
+            if (ty > plotY)
+                drawList->AddText(ImVec2(tx, ty), colVal, buf);
+        }
+
+        // X-axis label
+        {
+            char buf[12];
+            std::snprintf(buf, sizeof(buf), "S%d", i + 1);
+            ImVec2 tsz = ImGui::CalcTextSize(buf);
+            drawList->AddText(
+                ImVec2(x0 + (x1 - x0) * 0.5f - tsz.x * 0.5f, plotY + plotH + 4.f),
+                colTick, buf);
         }
     }
 
@@ -406,7 +472,6 @@ int main()
             if (ImGui::Button("OK")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
-
         // -----------------------------------------------------------
         // 6  No-data splash / paste panel
         // -----------------------------------------------------------
@@ -517,16 +582,151 @@ int main()
         window.get_framebuffer_size(fbW, fbH);
         const int sidebarPixelWidth =
             static_cast<int>(sidebarWidth * (static_cast<float>(fbW) / static_cast<float>(winW)));
-
         // -----------------------------------------------------------
-        // 8  TAB-specific UI
-        // -----------------------------------------------------------
+                // 8  TAB-specific UI
+                // -----------------------------------------------------------
 
         if (selectedTab == 0) // DASHBOARD
         {
             ImGui::BeginChild("##dashboard", ImVec2(0, 0), false,
                 ImGuiWindowFlags_AlwaysVerticalScrollbar);
-            // ... dashboard code ...
+
+            if (!dataLoaded)
+            {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                    "No dataset loaded. Use File > Load Dataset to begin.");
+            }
+            else
+            {
+                // ── Title ────────────────────────────────────────────────
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                    "SURVEY DASHBOARD  —  %zu respondents", dataManager.RowCount());
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Per-metric summary cards ─────────────────────────────
+                // Each card: metric name, mean, std dev, min, max in a
+                // bordered child region so they look like tiles.
+                const float cardW = 230.f;
+                const float cardH = 110.f;
+                const float padX = 12.f;
+                bool firstCard = true;
+
+                for (const auto& mName : metricNames)
+                {
+                    std::vector<float> col = dataManager.GetMetricColumn(mName);
+                    if (col.empty()) continue;
+
+                    float mean, median, variance, stddev;
+                    ComputeStats(col, mean, median, variance, stddev);
+                    float minV = *std::min_element(col.begin(), col.end());
+                    float maxV = *std::max_element(col.begin(), col.end());
+
+                    if (!firstCard) ImGui::SameLine(0.f, padX);
+                    firstCard = false;
+
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.13f, 0.15f, 0.19f, 1.f));
+                    ImGui::BeginChild(mName.c_str(), ImVec2(cardW, cardH), true);
+
+                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "%s", mName.c_str());
+                    ImGui::Separator();
+                    ImGui::Text("Mean   : %.3f", mean);
+                    ImGui::Text("Std Dev: %.3f", stddev);
+                    ImGui::Text("Median : %.3f", median);
+                    ImGui::Text("Range  : %.2f – %.2f", minV, maxV);
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleColor();
+
+                    // Wrap to next row after every 4 cards
+                    static int cardCount = 0;
+                    ++cardCount;
+                    if (cardCount % 4 == 0) firstCard = true;
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Gender breakdown ─────────────────────────────────────
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "GENDER BREAKDOWN");
+                ImGui::Spacing();
+
+                int nMale = 0, nFemale = 0, nOther = 0;
+                float totalMale = 0.f, totalFemale = 0.f;
+                for (const auto& r : dataManager.GetRespondents())
+                {
+                    std::string g = r.gender;
+                    std::transform(g.begin(), g.end(), g.begin(), ::tolower);
+                    if (g == "male") { ++nMale;   totalMale += r.TotalScore(); }
+                    else if (g == "female") { ++nFemale; totalFemale += r.TotalScore(); }
+                    else { ++nOther; }
+                }
+
+                ImGui::Columns(3, "##gender_cols", true);
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.f, 1.f), "Male");
+                ImGui::Text("n = %d", nMale);
+                if (nMale > 0) ImGui::Text("Avg Total: %.3f", totalMale / nMale);
+                ImGui::NextColumn();
+
+                ImGui::TextColored(ImVec4(1.f, 0.6f, 0.8f, 1.f), "Female");
+                ImGui::Text("n = %d", nFemale);
+                if (nFemale > 0) ImGui::Text("Avg Total: %.3f", totalFemale / nFemale);
+                ImGui::NextColumn();
+
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.f), "Other / N/A");
+                ImGui::Text("n = %d", nOther);
+                ImGui::Columns(1);
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Full respondent table ────────────────────────────────
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "RAW RECORD MATRIX");
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("##raw_table", 9,
+                    ImGuiTableFlags_Borders |
+                    ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_ScrollX |
+                    ImGuiTableFlags_ScrollY |
+                    ImGuiTableFlags_SizingFixedFit,
+                    ImVec2(0.f, 300.f)))
+                {
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 40.f);
+                    ImGui::TableSetupColumn("Gender", ImGuiTableColumnFlags_WidthFixed, 70.f);
+                    ImGui::TableSetupColumn("Age", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("Education", ImGuiTableColumnFlags_WidthFixed, 110.f);
+                    ImGui::TableSetupColumn("Exposure", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("Normaliz.", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("Platform", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("RealWorld", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("Total", ImGuiTableColumnFlags_WidthFixed, 70.f);
+                    ImGui::TableHeadersRow();
+
+                    int rowN = 0;
+                    for (const auto& r : dataManager.GetRespondents())
+                    {
+                        ++rowN;
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0); ImGui::Text("%d", rowN);
+                        ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(r.gender.c_str());
+                        ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(r.ageGroup.c_str());
+                        ImGui::TableSetColumnIndex(3); ImGui::TextUnformatted(r.education.c_str());
+                        ImGui::TableSetColumnIndex(4); ImGui::Text("%.2f", r.ExposureScore());
+                        ImGui::TableSetColumnIndex(5); ImGui::Text("%.2f", r.NormalizationScore());
+                        ImGui::TableSetColumnIndex(6); ImGui::Text("%.2f", r.PlatformAttitude());
+                        ImGui::TableSetColumnIndex(7); ImGui::Text("%.2f", r.RealWorldScore());
+                        ImGui::TableSetColumnIndex(8); ImGui::Text("%.2f", r.TotalScore());
+                    }
+                    ImGui::EndTable();
+                }
+            }
+
             ImGui::EndChild();
         }
         else if (selectedTab == 1) // CHARTS
@@ -564,41 +764,28 @@ int main()
                     // B-31 FIX: Bar chart now drawn via ImGui DrawList inside
                     // this child window, not via raw OpenGL outside it.
                     // --------------------------------------------------------
-                case 0: // Bar Chart (ImGui DrawList)
+                case 0: // Bar Chart (ImGui DrawList, self-contained labels)
                 {
                     const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
                     const ImVec2 canvasSize = ImGui::GetContentRegionAvail();
 
-                    // Reserve the canvas area for input (hover, tooltip).
+                    // Reserve canvas area for hover input.
                     ImGui::InvisibleButton("##bar_canvas", canvasSize);
 
-                    // Mouse position in screen space — same space DrawBarChartImGui
-                    // uses, so hit-testing is exact.
                     const ImVec2 mousePos = ImGui::GetIO().MousePos;
-
-                    // Ensure progress vector matches bar count.
                     hoverDetector.resize(activeVals.size());
 
                     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-                    // Draw bars AND hit-test in one pass; returns hovered index.
+                    // DrawBarChartImGui draws title, axes, ticks, gridlines,
+                    // value labels, and X labels — no external AxisRenderer needed.
                     const int hoveredBar = DrawBarChartImGui(
                         dl, canvasPos, canvasSize,
                         activeVals, hoverDetector.progress(),
-                        mousePos, colorBase, colorHighlight);
+                        mousePos, colorBase, colorHighlight,
+                        metricNames[metricComboIdx]);   // <-- chart title
 
-                    // Advance smooth animation toward/away from hovered bar.
                     hoverDetector.tick(ImGui::GetIO().DeltaTime, hoveredBar);
-
-                    // Axis ticks & labels overlay (AxisRenderer still uses its
-                    // own ViewportInfo; pass it the same canvas region).
-                    Statix::ChartBounds  bounds;
-                    Statix::ViewportInfo viewport =
-                        axisRenderer.compute(winW, winH, sidebarWidth, bounds);
-                    axisRenderer.draw(dl, viewport,
-                        activeVals, metricNames[metricComboIdx], bounds);
-
-                    // Tooltip.
                     Statix::UI::draw_bar_tooltip(hoveredBar, activeVals);
                     break;
                 }
@@ -625,15 +812,273 @@ int main()
                 ImGui::EndChild();
             }
         }
-        else if (selectedTab == 2)
+        else if (selectedTab == 2) // ANALYTICS SETTINGS
         {
-            if (!metricNames.empty())
+            ImGui::BeginChild("##modeling", ImVec2(0, 0), false,
+                ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+            if (!dataLoaded)
             {
-                ImGui::BeginChild("##modeling", ImVec2(0, 0), false,
-                    ImGuiWindowFlags_AlwaysVerticalScrollbar);
-                // ... modeling code ...
-                ImGui::EndChild();
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                    "No dataset loaded. Use File > Load Dataset to begin.");
             }
+            else
+            {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f), "ANALYTICS SETTINGS");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Visual colour pickers ─────────────────────────────────
+                ImGui::TextColored(ImVec4(0.7f, 0.75f, 0.8f, 1.f), "Chart Colours");
+                ImGui::Spacing();
+                ImGui::ColorEdit4("Bar Base Colour", colorBase);
+                ImGui::ColorEdit4("Bar Highlight Colour", colorHighlight);
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Pearson correlation matrix ────────────────────────────
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                    "PEARSON CORRELATION MATRIX");
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.6f, 1.f),
+                    "r values across all five sub-scores (n = %zu)", dataManager.RowCount());
+                ImGui::Spacing();
+
+                const int nm = static_cast<int>(metricNames.size());
+
+                if (ImGui::BeginTable("##corr_matrix", nm + 1,
+                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_SizingFixedFit))
+                {
+                    // Header row
+                    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 130.f);
+                    for (const auto& n : metricNames)
+                        ImGui::TableSetupColumn(n.c_str(),
+                            ImGuiTableColumnFlags_WidthFixed, 100.f);
+                    ImGui::TableHeadersRow();
+
+                    for (int row = 0; row < nm; ++row)
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                            "%s", metricNames[row].c_str());
+
+                        std::vector<float> rowVec =
+                            dataManager.GetMetricColumn(metricNames[row]);
+
+                        for (int col = 0; col < nm; ++col)
+                        {
+                            ImGui::TableSetColumnIndex(col + 1);
+                            if (row == col)
+                            {
+                                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.f), "1.000");
+                            }
+                            else
+                            {
+                                std::vector<float> colVec =
+                                    dataManager.GetMetricColumn(metricNames[col]);
+                                float r = PearsonCorrelation(rowVec, colVec);
+
+                                // Colour-code: strong positive=green, negative=red
+                                ImVec4 rCol;
+                                if (r > 0.5f) rCol = ImVec4(0.2f, 0.9f, 0.4f, 1.f);
+                                else if (r > 0.2f) rCol = ImVec4(0.6f, 0.9f, 0.4f, 1.f);
+                                else if (r < -0.5f) rCol = ImVec4(1.0f, 0.3f, 0.3f, 1.f);
+                                else if (r < -0.2f) rCol = ImVec4(1.0f, 0.6f, 0.3f, 1.f);
+                                else                rCol = ImVec4(0.8f, 0.8f, 0.8f, 1.f);
+
+                                ImGui::TextColored(rCol, "%.3f", r);
+                            }
+                        }
+                    }
+                    ImGui::EndTable();
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Linear Regression ────────────────────────────────────
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                    "LINEAR REGRESSION");
+                ImGui::Spacing();
+
+                // X / Y metric selectors
+                std::vector<const char*> mCombo;
+                for (const auto& n : metricNames) mCombo.push_back(n.c_str());
+
+                ImGui::Text("Independent (X):");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(180.f);
+                ImGui::Combo("##regX", &xMetricIdx,
+                    mCombo.data(), static_cast<int>(mCombo.size()));
+
+                ImGui::Text("Dependent   (Y):");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(180.f);
+                ImGui::Combo("##regY", &yMetricIdx,
+                    mCombo.data(), static_cast<int>(mCombo.size()));
+
+                ImGui::Spacing();
+
+                if (xMetricIdx != yMetricIdx)
+                {
+                    std::vector<float> X =
+                        dataManager.GetMetricColumn(metricNames[xMetricIdx]);
+                    std::vector<float> Y =
+                        dataManager.GetMetricColumn(metricNames[yMetricIdx]);
+
+                    auto reg = LinearFit(X, Y);
+                    float r = PearsonCorrelation(X, Y);
+
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg,
+                        ImVec4(0.11f, 0.13f, 0.17f, 1.f));
+                    ImGui::BeginChild("##reg_result",
+                        ImVec2(0.f, 110.f), true);
+
+                    ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                        "%s  →  %s",
+                        metricNames[xMetricIdx].c_str(),
+                        metricNames[yMetricIdx].c_str());
+                    ImGui::Separator();
+
+                    ImGui::Text("Formula : Y = %.4f * X  +  %.4f",
+                        reg.slope, reg.intercept);
+                    ImGui::Text("Pearson r: %.4f", r);
+                    ImGui::Text("R²       : %.4f", reg.rSquared);
+
+                    // Verbal strength
+                    float absR = std::fabs(r);
+                    const char* strength =
+                        absR >= 0.7f ? "Strong" :
+                        absR >= 0.4f ? "Moderate" :
+                        absR >= 0.2f ? "Weak" : "Negligible";
+                    const char* direction = r >= 0.f ? "positive" : "negative";
+                    ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.f, 1.f),
+                        "Interpretation: %s %s correlation", strength, direction);
+
+                    ImGui::EndChild();
+                    ImGui::PopStyleColor();
+
+                    // Inline scatter with regression line overlay
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.7f, 0.75f, 0.8f, 1.f),
+                        "Scatter with regression line:");
+                    ImGui::Spacing();
+
+                    const float plotW = ImGui::GetContentRegionAvail().x;
+                    const float plotH = 200.f;
+                    const float margin = 10.f;
+
+                    float minX = *std::min_element(X.begin(), X.end());
+                    float maxX = *std::max_element(X.begin(), X.end());
+                    float minY = *std::min_element(Y.begin(), Y.end());
+                    float maxY = *std::max_element(Y.begin(), Y.end());
+                    if (maxX - minX < 1e-5f) { minX -= .5f; maxX += .5f; }
+                    if (maxY - minY < 1e-5f) { minY -= .5f; maxY += .5f; }
+
+                    ImVec2 origin = ImGui::GetCursorScreenPos();
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+                    dl->AddRectFilled(origin,
+                        ImVec2(origin.x + plotW, origin.y + plotH),
+                        IM_COL32(25, 30, 40, 220));
+                    dl->AddRect(origin,
+                        ImVec2(origin.x + plotW, origin.y + plotH),
+                        IM_COL32(80, 90, 110, 180));
+
+                    auto toPixel = [&](float x, float y) -> ImVec2 {
+                        float px = origin.x + margin
+                            + (x - minX) / (maxX - minX) * (plotW - margin * 2.f);
+                        float py = origin.y + (plotH - margin)
+                            - (y - minY) / (maxY - minY) * (plotH - margin * 2.f);
+                        return ImVec2(px, py);
+                        };
+
+                    // Data points
+                    for (size_t i = 0; i < X.size(); ++i)
+                        dl->AddCircleFilled(toPixel(X[i], Y[i]), 4.f,
+                            IM_COL32(52, 201, 180, 220));
+
+                    // Regression line from minX to maxX
+                    float yAtMin = reg.slope * minX + reg.intercept;
+                    float yAtMax = reg.slope * maxX + reg.intercept;
+                    dl->AddLine(toPixel(minX, yAtMin),
+                        toPixel(maxX, yAtMax),
+                        IM_COL32(250, 200, 50, 220), 2.f);
+
+                    // X-axis min/max labels
+                    char buf[24];
+                    std::snprintf(buf, sizeof(buf), "%.1f", minX);
+                    dl->AddText(ImVec2(origin.x + margin, origin.y + plotH - 16.f),
+                        IM_COL32(180, 190, 200, 200), buf);
+                    std::snprintf(buf, sizeof(buf), "%.1f", maxX);
+                    ImVec2 tsz = ImGui::CalcTextSize(buf);
+                    dl->AddText(ImVec2(origin.x + plotW - margin - tsz.x, origin.y + plotH - 16.f),
+                        IM_COL32(180, 190, 200, 200), buf);
+
+                    ImGui::Dummy(ImVec2(plotW, plotH + 8.f));
+                }
+                else
+                {
+                    ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.3f, 1.f),
+                        "Select different metrics for X and Y.");
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // ── Descriptive stats table ───────────────────────────────
+                ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                    "DESCRIPTIVE STATISTICS");
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("##desc_stats", 7,
+                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                    ImGuiTableFlags_SizingFixedFit))
+                {
+                    ImGui::TableSetupColumn("Metric", ImGuiTableColumnFlags_WidthFixed, 140.f);
+                    ImGui::TableSetupColumn("Mean", ImGuiTableColumnFlags_WidthFixed, 70.f);
+                    ImGui::TableSetupColumn("Median", ImGuiTableColumnFlags_WidthFixed, 70.f);
+                    ImGui::TableSetupColumn("Std Dev", ImGuiTableColumnFlags_WidthFixed, 70.f);
+                    ImGui::TableSetupColumn("Variance", ImGuiTableColumnFlags_WidthFixed, 80.f);
+                    ImGui::TableSetupColumn("Min", ImGuiTableColumnFlags_WidthFixed, 60.f);
+                    ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, 60.f);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& mName : metricNames)
+                    {
+                        std::vector<float> col =
+                            dataManager.GetMetricColumn(mName);
+                        if (col.empty()) continue;
+
+                        float mean, median, variance, stddev;
+                        ComputeStats(col, mean, median, variance, stddev);
+                        float minV = *std::min_element(col.begin(), col.end());
+                        float maxV = *std::max_element(col.begin(), col.end());
+
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextColored(ImVec4(0.25f, 0.88f, 0.82f, 1.f),
+                            "%s", mName.c_str());
+                        ImGui::TableSetColumnIndex(1); ImGui::Text("%.3f", mean);
+                        ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", median);
+                        ImGui::TableSetColumnIndex(3); ImGui::Text("%.3f", stddev);
+                        ImGui::TableSetColumnIndex(4); ImGui::Text("%.3f", variance);
+                        ImGui::TableSetColumnIndex(5); ImGui::Text("%.2f", minV);
+                        ImGui::TableSetColumnIndex(6); ImGui::Text("%.2f", maxV);
+                    }
+                    ImGui::EndTable();
+                }
+            }
+
+            ImGui::EndChild();
         }
 
         // -----------------------------------------------------------
